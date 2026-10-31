@@ -2,6 +2,7 @@ import re
 import json
 import uuid
 import urllib.parse
+import textwrap
 from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
@@ -65,7 +66,6 @@ def renderizar_mapa(usuario_perfil):
             q_pcd = " ♿ PCD" if quarto.get("pcd") else ""
             tem_ar = bool(quarto.get("ar_condicionado", False))
             
-            # Badge de Climatização
             badge_clima_quarto = (
                 "<span style='background:#e0f2fe; color:#0369a1; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.85rem; border:1px solid #bae6fd;'>❄️ Ar-Condicionado</span>"
                 if tem_ar else
@@ -74,15 +74,13 @@ def renderizar_mapa(usuario_perfil):
 
             q_ala = f" (Ala: {quarto.get('ala')})" if quarto.get("ala") else ""
 
-            st.markdown(
-                f"""
+            header_quarto_html = textwrap.dedent(f"""
                 <div style='display:flex; align-items:center; justify-content:space-between; margin-top:16px; margin-bottom:8px;'>
                     <h3 style='margin:0; font-size:1.3rem; color:#1e293b;'>🚪 {q_nome}{q_ala} <span style='font-size:0.95rem; font-weight:normal; color:#64748b;'>— {q_perfil}{q_pcd}</span></h3>
                     <div>{badge_clima_quarto}</div>
                 </div>
-                """,
-                unsafe_allow_html=True
-            )
+            """).strip()
+            st.markdown(header_quarto_html, unsafe_allow_html=True)
 
             camas_quarto = [c for c in camas if c.get("quarto_id") == q_id]
             camas_quarto_ordenadas = ordenar_natural(camas_quarto, "numero")
@@ -132,63 +130,62 @@ def renderizar_mapa(usuario_perfil):
                                 foto_html = f"<img src='{h_foto}' style='width:42px; height:42px; border-radius:50%; object-fit:cover; border:2px solid #cbd5e1; margin-right:8px;'>"
                             
                             aviso_saida = "<div style='color:#dc2626; font-weight:700; font-size:0.78rem; margin-top:3px;'>⚠️ Saída hoje às 11:00!</div>" if checkout_hoje else ""
-                            detalhes_hospede = f"""
-                            <div style='display:flex; align-items:center; margin-top:8px;'>
-                                {foto_html}
-                                <div style='line-height:1.2;'>
-                                    <div style='font-weight:700; color:#0f172a; font-size:0.92rem;'>{nome_hospede_txt}</div>
-                                    <div style='font-size:0.75rem; color:#64748b;'>Loc: <code>{cod_loc}</code> • {canal_res}</div>
+                            detalhes_hospede = textwrap.dedent(f"""
+                                <div style='display:flex; align-items:center; margin-top:8px;'>
+                                    {foto_html}
+                                    <div style='line-height:1.2;'>
+                                        <div style='font-weight:700; color:#0f172a; font-size:0.92rem;'>{nome_hospede_txt}</div>
+                                        <div style='font-size:0.75rem; color:#64748b;'>Loc: <code>{cod_loc}</code> • {canal_res}</div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div style='font-size:0.78rem; color:#475569; margin-top:6px;'>
-                                📅 <b>Saída:</b> {f_fim}
-                                {aviso_saida}
-                                {info_empresa}
-                            </div>
-                            """
+                                <div style='font-size:0.78rem; color:#475569; margin-top:6px;'>
+                                    📅 <b>Saída:</b> {f_fim}
+                                    {aviso_saida}
+                                    {info_empresa}
+                                </div>
+                            """).strip()
 
-                # Cores e Borda do Card
                 if c_status == "Disponível":
-                    bg_color, border_cor, badge_cor = "#f0fdf4", "#86efac", "#16a34a"
+                    bg_color, border_cor = "#f0fdf4", "#86efac"
                     status_badge = f"<span style='background:#dcfce7; color:#15803d; font-weight:700; font-size:0.78rem; padding:2px 8px; border-radius:4px;'>🟢 Livre • R$ {preco_leito:.2f}</span>"
                 elif c_status == "Ocupado" and checkout_hoje:
-                    bg_color, border_cor, badge_cor = "#fff7ed", "#fdba74", "#ea580c"
+                    bg_color, border_cor = "#fff7ed", "#fdba74"
                     status_badge = "<span style='background:#ffedd5; color:#c2410c; font-weight:700; font-size:0.78rem; padding:2px 8px; border-radius:4px;'>⏰ Saída Hoje (11h)</span>"
                 elif c_status == "Ocupado":
-                    bg_color, border_cor, badge_cor = "#fef2f2", "#fca5a5", "#dc2626"
+                    bg_color, border_cor = "#fef2f2", "#fca5a5"
                     status_badge = f"<span style='background:#fee2e2; color:#b91c1c; font-weight:700; font-size:0.78rem; padding:2px 8px; border-radius:4px;'>🔴 Ocupado • R$ {preco_leito:.2f}</span>"
                 else: 
-                    bg_color, border_cor, badge_cor = "#fffbeb", "#fde68a", "#d97706"
+                    bg_color, border_cor = "#fffbeb", "#fde68a"
                     status_badge = "<span style='background:#fef3c7; color:#b45309; font-weight:700; font-size:0.78rem; padding:2px 8px; border-radius:4px;'>🟡 Limpeza Pendente</span>"
 
-                # Botão Oficial WhatsApp em SVG
-                wpp_botao_html = ""
+                bloco_wpp_html = ""
                 if tel_hosp_wpp:
                     msg_saudacao = urllib.parse.quote(f"Olá {nome_hospede_txt}! Aqui é da recepção do hostel. Como podemos ajudar?")
                     wpp_url = f"https://wa.me/55{tel_hosp_wpp}?text={msg_saudacao}"
-                    wpp_botao_html = f"""
-                    <a href='{wpp_url}' target='_blank' style='display:inline-flex; align-items:center; gap:5px; background-color:#25D366; color:white; text-decoration:none; font-size:0.78rem; font-weight:700; padding:4px 10px; border-radius:5px; margin-top:6px; box-shadow:0 1px 2px rgba(0,0,0,0.1);'>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
-                        WhatsApp
-                    </a>
-                    """
+                    bloco_wpp_html = (
+                        f"<div style='margin-top:6px;'>"
+                        f"<a href='{wpp_url}' target='_blank' style='display:inline-flex; align-items:center; gap:5px; background-color:#25D366; color:white; text-decoration:none; font-size:0.78rem; font-weight:700; padding:4px 10px; border-radius:5px; box-shadow:0 1px 2px rgba(0,0,0,0.1);'>"
+                        f"<svg width='14' height='14' viewBox='0 0 24 24' fill='white'><path d='M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z'/></svg>"
+                        f" WhatsApp"
+                        f"</a>"
+                        f"</div>"
+                    )
 
                 with cols[idx % 4]:
-                    card_html = f"""
-                    <div style='background-color:{bg_color}; border:1.5px solid {border_cor}; border-radius:10px; padding:12px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);'>
-                        <div style='display:flex; justify-content:space-between; align-items:center;'>
-                            <b style='font-size:1.05rem; color:#1e293b;'>🛏️ Cama {c_num}</b>
-                            <div>{toalha_badge}</div>
+                    card_html = textwrap.dedent(f"""
+                        <div style='background-color:{bg_color}; border:1.5px solid {border_cor}; border-radius:10px; padding:12px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);'>
+                            <div style='display:flex; justify-content:space-between; align-items:center;'>
+                                <b style='font-size:1.05rem; color:#1e293b;'>🛏️ Cama {c_num}</b>
+                                <div>{toalha_badge}</div>
+                            </div>
+                            <div style='font-size:0.75rem; color:#64748b; margin-bottom:4px;'>{c_tipo}</div>
+                            <div style='margin-bottom:4px;'>{status_badge}</div>
+                            {detalhes_hospede}
+                            {bloco_wpp_html}
                         </div>
-                        <div style='font-size:0.75rem; color:#64748b; margin-bottom:4px;'>{c_tipo}</div>
-                        <div style='margin-bottom:4px;'>{status_badge}</div>
-                        {detalhes_hospede}
-                        <div style='margin-top:6px;'>{wpp_botao_html}</div>
-                    </div>
-                    """
+                    """).strip()
                     st.markdown(card_html, unsafe_allow_html=True)
 
-                    # Ações do Card para Recepção / Admin
                     if usuario_perfil in ["Administrador", "Recepção"] and c_status == "Ocupado" and reserva_cama:
                         btn_c1, btn_c2 = st.columns(2)
                         with btn_c1:
@@ -197,7 +194,6 @@ def renderizar_mapa(usuario_perfil):
                                 st.session_state["destaque_reserva_id"] = reserva_cama["id"]
                                 st.rerun()
 
-                        # RESTAURAÇÃO COMPLETA DA TROCA DE CAMA (ROOM MOVE)
                         with btn_c2:
                             outras_vagas = [cv for cv in camas_vagas_geral if cv["id"] != c_id]
                             if outras_vagas:
@@ -480,7 +476,6 @@ def renderizar_reservas():
                     forma_adiantamento = det_orig.get("forma_adiantamento", "Não informado")
                     codigo_loc_atual = res_edit.get("codigo_localizador") or det_orig.get("codigo_localizador") or f"HST-{uuid.uuid4().hex[:6].upper()}"
 
-                    # Botão Direto de WhatsApp
                     tel_edit_wpp = re.sub(r'\D', '', str(res_edit.get("hospedes", {}).get("telefone", "")))
                     if tel_edit_wpp:
                         msg_edit = urllib.parse.quote(f"Olá {res_edit.get('hospedes', {}).get('nome')}, sobre sua reserva {codigo_loc_atual}:")
@@ -673,333 +668,4 @@ def renderizar_checkout():
                 tem_pendencias_extras = (len(vendas_pendentes) > 0 or len(eventos_pendentes) > 0)
 
                 badge_saida = " <span style='background-color:#ffe8cc; color:#d9480f; padding:2px 8px; border-radius:4px; font-weight:bold;'>⏰ Check-out Hoje (11:00)</span>" if checkout_hoje else ""
-                badge_pendencia = " <span style='background-color:#fff3cd; color:#856404; padding:2px 8px; border-radius:4px;'>🛒 Consumo Pendente</span>" if tem_pendencias_extras else ""
-                badge_adiant = f" <span style='background-color:#dcfce7; color:#166534; padding:2px 8px; border-radius:4px;'>💵 Entrada: R$ {adiantamento:.2f}</span>" if adiantamento > 0 else ""
-
-                st.markdown(
-                    f"""
-                    <div style="border:1px solid #dee2e6; border-radius:8px; padding:14px; margin-bottom:10px; background-color:#f8f9fa;">
-                        <h4 style="margin:0 0 6px 0;">👤 {h_nome} &nbsp;<small style='color:#475569;'>[Localizador: <b>{cod_loc}</b> | {canal}]</small> {badge_saida} {badge_adiant} {badge_pendencia}</h4>
-                        <div style="font-size:0.95rem; color:#495057;">
-                            <b>Quarto:</b> {q_nome} | <b>Cama:</b> {c_num} | <b>Período:</b> {d_ini} até {d_fim} {empresa_tag}<br>
-                            <b>Total Estadia:</b> R$ {subtotal_hospedagem:.2f} | <b>Pago no Check-in:</b> - R$ {adiantamento:.2f} | <b>PDV:</b> R$ {subtotal_pdv:.2f} | <b>Eventos:</b> R$ {subtotal_eventos:.2f} | <b style="color:#2b8a3e; font-size:1.05rem;">Saldo a Pagar: R$ {max(0.0, total_inicial_estada):.2f}</b>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                with st.expander(f"🧾 Fechamento de Conta & Pagamento: {h_nome} (Cama {c_num})", expanded=deve_expandir):
-                    if deve_expandir:
-                        st.info("📍 Acesso rápido acionado: leito selecionado automaticamente para fechamento.")
-
-                    col_extrato, col_pagamento = st.columns([1, 1])
-
-                    with col_extrato:
-                        st.markdown("##### 📋 Extrato Discriminado")
-                        if detalhes_res:
-                            st.write(f"🏨 **Diárias ({detalhes_res.get('origem_canal', 'Balcão')}):** {detalhes_res.get('noites', 1)} noite(s) × R$ {detalhes_res.get('valor_diaria', 0.0):.2f} = **R$ {detalhes_res.get('subtotal_diarias', 0.0):.2f}**")
-                            if detalhes_res.get("qtd_cafes", 0) > 0:
-                                st.write(f"☕ **Café da Manhã:** {detalhes_res['qtd_cafes']} un × R$ {detalhes_res['preco_cafe']:.2f} = **R$ {detalhes_res['subtotal_cafes']:.2f}**")
-                            if detalhes_res.get("qtd_toalhas", 0) > 0:
-                                st.write(f"🧺 **Kits de Toalha:** {detalhes_res['qtd_toalhas']} un × R$ {detalhes_res['preco_toalha']:.2f} = **R$ {detalhes_res['subtotal_toalhas']:.2f}**")
-                            if detalhes_res.get("desconto", 0) > 0:
-                                st.write(f"🏷️ **Desconto Concedido:** - R$ {detalhes_res['desconto']:.2f}")
-                            st.write(f"**Total Contratado da Estadia:** R$ {subtotal_hospedagem:.2f}")
-                            if adiantamento > 0:
-                                st.write(f"🟢 **(-) Valor Pago no Check-in:** R$ {adiantamento:.2f} ({forma_adiantamento})")
-                            if estorno_credito > 0:
-                                st.write(f"🔴 **Crédito/Estorno devido ao hóspede:** R$ {estorno_credito:.2f}")
-                            st.write(f"➡️ **Saldo Restante da Estadia:** R$ {saldo_estadia_pendente:.2f}")
-                        else:
-                            st.write(f"🏨 **Total da Estadia:** R$ {subtotal_hospedagem:.2f}")
-
-                        if vendas_pendentes:
-                            st.write("🛒 **Consumo na Conveniência (PDV):**")
-                            for vp in vendas_pendentes:
-                                nome_prod = vp["produtos"]["nome"] if vp.get("produtos") else "Item da Loja"
-                                qtd_v = vp.get("quantidade", 1)
-                                tot_v = float(vp.get("valor_total") or 0.0)
-                                st.write(f"  * {qtd_v}x {nome_prod} — R$ {tot_v:.2f}")
-                        else:
-                            st.write("🛒 **Consumo na Conveniência:** Nenhum item pendente.")
-
-                        if eventos_pendentes:
-                            st.write("🎉 **Inscrições em Eventos:**")
-                            for ep in eventos_pendentes:
-                                nome_ev = ep["eventos"]["nome"] if ep.get("eventos") else "Evento"
-                                val_ev = float(ep["eventos"].get("valor_participacao") or 0.0) if ep.get("eventos") else 0.0
-                                st.write(f"  * {nome_ev} — R$ {val_ev:.2f}")
-                        else:
-                            st.write("🎉 **Eventos:** Nenhuma taxa pendente.")
-
-                        st.markdown("---")
-                        st.markdown("##### ➕ Ajustes de Saída")
-                        col_adj1, col_adj2 = st.columns(2)
-                        val_extra = col_adj1.number_input("Acréscimos / Multas (R$)", min_value=0.0, format="%.2f", key=f"extra_{r_id}")
-                        val_desc = col_adj2.number_input("Desconto de Saída (R$)", min_value=0.0, format="%.2f", key=f"desc_{r_id}")
-
-                        total_final_devido = max(0.0, total_inicial_estada + val_extra - val_desc)
-                        st.markdown(
-                            f"""
-                            <div style="background-color:#e7f5ff; border:1px solid #a5d8ff; padding:10px; border-radius:6px; margin-top:10px;">
-                                <span style="font-size:1.15rem; color:#1864ab; font-weight:bold;">Total Final a Pagar na Saída: R$ {total_final_devido:.2f}</span>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-
-                    with col_pagamento:
-                        st.markdown("##### 💳 Quitação da Conta")
-                        faturar_empresa_marcado = r.get("faturar_empresa", False)
-                        is_b2b = False
-                        if faturar_empresa_marcado and nome_empresa:
-                            is_b2b = st.checkbox(f"Faturar saldo integral para a empresa ({nome_empresa})", value=True, key=f"fat_check_{r_id}")
-
-                        if not is_b2b:
-                            if total_final_devido <= 0.01:
-                                st.success("✅ **Conta 100% quitada!** O hóspede não possui saldo pendente.")
-                                total_pago = 0.0
-                            else:
-                                st.caption("Distribua o saldo restante entre os métodos de pagamento:")
-                                cp1, cp2 = st.columns(2)
-                                p_pix = cp1.number_input("PIX (R$)", min_value=0.0, format="%.2f", key=f"pix_{r_id}")
-                                p_din = cp2.number_input("Dinheiro em Espécie (R$)", min_value=0.0, format="%.2f", key=f"din_{r_id}")
-                                cp3, cp4 = st.columns(2)
-                                p_cred = cp3.number_input("Cartão de Crédito (R$)", min_value=0.0, format="%.2f", key=f"cred_{r_id}")
-                                p_deb = cp4.number_input("Cartão de Débito (R$)", min_value=0.0, format="%.2f", key=f"deb_{r_id}")
-
-                                total_pago = p_pix + p_din + p_cred + p_deb
-                                saldo_diferenca = total_pago - total_final_devido
-                                st.write(f"**Total Informado Agora:** R$ {total_pago:.2f}")
-
-                                if total_final_devido > 0:
-                                    if saldo_diferenca < -0.01:
-                                        st.warning(f"⚠️ Falta Receber: R$ {abs(saldo_diferenca):.2f}")
-                                    elif saldo_diferenca > 0.01 and p_din > 0:
-                                        st.info(f"💵 Troco para o hóspede: R$ {saldo_diferenca:.2f}")
-                                    else:
-                                        st.success("✅ Valor exato!")
-                        else:
-                            total_pago = total_final_devido
-                            st.info(f"O saldo de R$ {total_final_devido:.2f} será lançado no faturamento corporativo de **{nome_empresa}**.")
-
-                        st.markdown("---")
-                        if st.button("🏁 Concluir Check-out e Quitar Conta", key=f"btn_chk_{r_id}", use_container_width=True):
-                            if not is_b2b and total_final_devido > 0.01 and total_pago < (total_final_devido - 0.01):
-                                st.error(f"O total informado (R$ {total_pago:.2f}) não cobre o saldo pendente (R$ {total_final_devido:.2f}).")
-                            else:
-                                for v in vendas_pendentes:
-                                    db.supabase.table("vendas").update({"status_pagamento": "Pago"}).eq("id", v["id"]).execute()
-                                for ep in eventos_pendentes:
-                                    db.supabase.table("eventos_participantes").update({"status_pagamento": "Pago"}).eq("id", ep["id"]).execute()
-
-                                db.supabase.table("reservas").update({"status": "Concluída"}).eq("id", r_id).execute()
-                                if cama_id:
-                                    db.supabase.table("camas").update({"status": "Limpeza Pendente", "toalha_colocada": False}).eq("id", cama_id).execute()
-
-                                db.notificar_sucesso(f"Check-out de {h_nome} concluído com sucesso!")
-                                st.rerun()
-
-                st.markdown("---")
-
-        st.subheader("📚 Histórico Geral de Reservas Concluídas")
-        todas_reservas = db.buscar_reservas_completas(incluir_foto=False, ordem_desc=True)
-
-        if todas_reservas:
-            dados_tabela = []
-            for tr in todas_reservas:
-                empresa_hist = tr.get("empresas", {}).get("razao_social") if tr.get("empresas") else "Próprio Hóspede"
-                if not tr.get("faturar_empresa"):
-                    empresa_hist = "Próprio Hóspede"
-                    
-                dados_tabela.append({
-                    "ID": tr.get("id"),
-                    "Localizador": tr.get("codigo_localizador", "S/CÓD"),
-                    "Origem": tr.get("origem_canal", "Balcão"),
-                    "Hóspede": tr["hospedes"]["nome"] if tr.get("hospedes") else "",
-                    "Telefone": tr["hospedes"]["telefone"] if tr.get("hospedes") else "",
-                    "Quarto": tr["camas"]["quartos"]["nome"] if tr.get("camas") and tr["camas"].get("quartos") else "",
-                    "Cama": tr["camas"]["numero"] if tr.get("camas") else "",
-                    "Entrada": formatar_data_br(tr.get("data_inicio")),
-                    "Saída": formatar_data_br(tr.get("data_fim")),
-                    "Responsável Financeiro": empresa_hist,
-                    "Valor Total (R$)": tr.get("valor_total"),
-                    "Situação": tr.get("status")
-                })
-            
-            col_exp_h1, col_exp_h2, col_exp_h3 = st.columns([2, 1, 1])
-            with col_exp_h1:
-                st.caption(f"📋 Total de registros: **{len(dados_tabela)} estadia(s)**")
-            with col_exp_h2:
-                df_res_exp = pd.DataFrame(dados_tabela).drop(columns=["ID", "Telefone"], errors="ignore")
-                st.download_button(
-                    label="📥 Baixar Histórico (CSV)",
-                    data=gerar_csv(df_res_exp),
-                    file_name="historico_reservas.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-            with col_exp_h3:
-                cols_pdf_res = ["Localizador", "Hóspede", "Quarto", "Cama", "Entrada", "Saída", "Origem", "Valor Total (R$)", "Situação"]
-                pdf_res_bytes = gerar_pdf_tabela("Histórico Geral de Reservas", cols_pdf_res, dados_tabela, orientacao="L")
-                st.download_button(
-                    label="📕 Baixar Histórico (PDF)",
-                    data=pdf_res_bytes,
-                    file_name="historico_reservas.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-
-            df_hist = pd.DataFrame(dados_tabela)
-            st.dataframe(df_hist.drop(columns=["ID", "Telefone"]), use_container_width=True)
-
-            with st.expander("🧾 Emitir / Visualizar Recibo de Check-out Finalizado"):
-                opcoes_res_rec = {f"[{d['Localizador']}] Hóspede: {d['Hóspede']} | Quarto {d['Quarto']} Cama {d['Cama']}": d for d in dados_tabela}
-                sel_rec = st.selectbox("Selecione a Estadia:", list(opcoes_res_rec.keys()))
-                d_rec = opcoes_res_rec[sel_rec]
-
-                res_rec_det = db.supabase.table("configuracoes").select("valor").eq("chave", f"reserva_det_{d_rec['ID']}").execute()
-                det_rec = json.loads(res_rec_det.data[0]["valor"]) if (res_rec_det.data and len(res_rec_det.data) > 0 and res_rec_det.data[0].get("valor")) else None
-
-                itens_recibo_txt = ""
-                if det_rec:
-                    itens_recibo_txt = (
-                        f"Localizador: {det_rec.get('codigo_localizador', d_rec['Localizador'])}\n"
-                        f"Canal de Origem: {det_rec.get('origem_canal', d_rec['Origem'])}\n"
-                        f"Diárias: {det_rec.get('noites')} noites × R$ {det_rec.get('valor_diaria', 0):.2f} = R$ {det_rec.get('subtotal_diarias', 0):.2f}\n"
-                        f"Café da Manhã: {det_rec.get('qtd_cafes', 0)} un = R$ {det_rec.get('subtotal_cafes', 0):.2f}\n"
-                        f"Kits de Toalha: {det_rec.get('qtd_toalhas', 0)} un = R$ {det_rec.get('subtotal_toalhas', 0):.2f}\n"
-                        f"Desconto Concedido: - R$ {det_rec.get('desconto', 0):.2f}\n"
-                        f"--------------------------------------------------\n"
-                        f"Entrada Paga no Check-in: R$ {det_rec.get('adiantamento', 0):.2f} ({det_rec.get('forma_adiantamento', 'N/D')})\n"
-                    )
-
-                texto_recibo = f"""
-==================================================
-              🏨 COMPROVANTE DE HOSPEDAGEM
-==================================================
-Localizador: {d_rec['Localizador']}
-Hóspede: {d_rec['Hóspede']}
-Acomodação: Quarto {d_rec['Quarto']} — Cama {d_rec['Cama']}
-Período: {d_rec['Entrada']} até {d_rec['Saída']}
-Canal de Venda: {d_rec['Origem']}
-Responsável Financeiro: {d_rec['Responsável Financeiro']}
---------------------------------------------------
-{itens_recibo_txt}VALOR TOTAL DA HOSPEDAGEM: R$ {float(d_rec['Valor Total (R$)'] or 0):.2f}
-Status: {d_rec['Situação']} e Quitado
-Data de Emissão: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
-==================================================
-Obrigado por se hospedar conosco! Volte sempre!
-==================================================
-"""
-                st.markdown(f"<div class='recibo-card'><pre>{texto_recibo}</pre></div>", unsafe_allow_html=True)
-                
-                tel_hosp_limpo = re.sub(r'\D', '', str(d_rec.get("Telefone", "")))
-                msg_whats = urllib.parse.quote(
-                    f"Olá {d_rec['Hóspede']}! Segue o comprovante da sua estadia:\n"
-                    f"🔖 Localizador: {d_rec['Localizador']}\n"
-                    f"🛏️ Quarto {d_rec['Quarto']}, Cama {d_rec['Cama']}\n"
-                    f"📅 Período: {d_rec['Entrada']} até {d_rec['Saída']}\n"
-                    f"💰 Total Quitado: R$ {float(d_rec['Valor Total (R$)'] or 0):.2f}\n"
-                    f"Agradecemos pela sua visita e esperamos revê-lo(a) em breve!"
-                )
-                link_whatsapp = f"https://api.whatsapp.com/send?phone=55{tel_hosp_limpo}&text={msg_whats}" if tel_hosp_limpo else None
-
-                col_rec1, col_rec2, col_rec3 = st.columns(3)
-                with col_rec1:
-                    if link_whatsapp:
-                        st.link_button("📲 Enviar WhatsApp", link_whatsapp, use_container_width=True)
-                    else:
-                        st.caption("Cadastre o telefone para envio WhatsApp.")
-                with col_rec2:
-                    st.download_button(
-                        label="📄 Baixar Texto (.txt)",
-                        data=texto_recibo,
-                        file_name=f"recibo_hostel_{d_rec['Localizador']}.txt",
-                        mime="text/plain",
-                        use_container_width=True
-                    )
-                with col_rec3:
-                    pdf_recibo_bytes = gerar_pdf_recibo(
-                        hospede=f"{d_rec['Hóspede']} (Cód: {d_rec['Localizador']})",
-                        quarto=d_rec['Quarto'],
-                        cama=d_rec['Cama'],
-                        periodo=f"{d_rec['Entrada']} até {d_rec['Saída']}",
-                        responsavel=d_rec['Responsável Financeiro'],
-                        total_geral=float(d_rec['Valor Total (R$)'] or 0.0),
-                        detalhes_texto=itens_recibo_txt
-                    )
-                    st.download_button(
-                        label="📕 Baixar Recibo Oficial (PDF)",
-                        data=pdf_recibo_bytes,
-                        file_name=f"recibo_hostel_{d_rec['Localizador']}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-        else:
-            st.info("Nenhuma reserva arquivada no histórico.")
-    except Exception as e:
-        st.error(f"Erro ao processar histórico: {e}")
-
-def renderizar_limpeza():
-    try:
-        res_colabs = db.supabase.table("colaboradores").select("*").eq("status", "Ativo").execute()
-        colaboradores = res_colabs.data or []
-        camas_pendentes = db.buscar_camas_com_quartos(status_filtro="Limpeza Pendente")
-
-        if not camas_pendentes:
-            st.success("🎉 Todos os leitos estão higienizados e prontos para uso!")
-            return
-
-        colab_labels = ["-- Selecione o Responsável pela Higienização --"] + [f"{c['nome']} ({c['cargo']})" for c in colaboradores]
-        responsavel_limpeza = st.selectbox("Colaborador Responsável:", colab_labels)
-        
-        st.write("### 🟡 Quartos e Camas Aguardando Limpeza:")
-        quartos_pendentes = {}
-        for cama in camas_pendentes:
-            q_id = cama.get("quarto_id")
-            q_nome = cama["quartos"]["nome"] if cama.get("quartos") else "Desconhecido"
-            if q_id not in quartos_pendentes:
-                quartos_pendentes[q_id] = {"nome": q_nome, "camas": []}
-            quartos_pendentes[q_id]["camas"].append(cama)
-            
-        for q_id, dados_quarto in quartos_pendentes.items():
-            st.markdown(f"#### 🚪 Quarto {dados_quarto['nome']}")
-            c_btn_q, c_chk_q = st.columns([3, 2])
-            with c_chk_q:
-                toalha_quarto_todo = st.checkbox("Equipar todas as camas com toalhas", value=False, key=f"chk_toalha_q_{q_id}")
-            with c_btn_q:
-                if st.button(f"🧹 Concluir Higienização do Quarto {dados_quarto['nome']}", key=f"limp_q_{q_id}"):
-                    if responsavel_limpeza == "-- Selecione o Responsável pela Higienização --" and len(colaboradores) > 0:
-                        st.error("Por favor, selecione seu nome acima antes de confirmar.")
-                    else:
-                        db.supabase.table("camas").update({
-                            "status": "Disponível",
-                            "toalha_colocada": toalha_quarto_todo
-                        }).eq("quarto_id", q_id).eq("status", "Limpeza Pendente").execute()
-                        db.notificar_sucesso(f"Quarto {dados_quarto['nome']} completamente liberado!")
-                        st.rerun()
-            
-            for cama in dados_quarto["camas"]:
-                c_id = cama["id"]
-                c_num = cama["numero"]
-                col1, col2, col3 = st.columns([3, 2, 2])
-                with col1:
-                    st.warning(f"🛏️ Cama {c_num}")
-                with col2:
-                    colocar_toalha_indiv = st.checkbox("Equipar com toalha", value=False, key=f"toalha_c_{c_id}")
-                with col3:
-                    if st.button("✅ Concluir Leito", key=f"limp_{c_id}"):
-                        if responsavel_limpeza == "-- Selecione o Responsável pela Higienização --" and len(colaboradores) > 0:
-                            st.error("Selecione seu nome acima antes de confirmar.")
-                        else:
-                            db.supabase.table("camas").update({
-                                "status": "Disponível",
-                                "toalha_colocada": colocar_toalha_indiv
-                            }).eq("id", c_id).execute()
-                            db.notificar_sucesso(f"Cama {c_num} liberada!")
-                            st.rerun()
-            st.markdown("---")
-    except Exception as e:
-        st.error(f"Erro ao carregar o painel de limpeza: {e}")
+                badge_pendencia = " <span style='
