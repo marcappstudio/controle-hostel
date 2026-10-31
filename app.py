@@ -33,7 +33,7 @@ importlib.reload(ajuda_lgpd)
 # ==========================================
 st.set_page_config(
     page_title="Sistema de Gestão de Hostel",
-    page_icon="🏨",
+    page_icon="https://unmyzwkinjvexxanknku.supabase.co/storage/v1/object/public/publico/icone.png",
     layout="wide",
 )
 
@@ -108,18 +108,19 @@ else:
         }
     """
 
-# Injeção unificada de PWA (manifesto embutido, fullscreen mobile) e Estilos CSS
+# Injeção unificada de PWA com ícone oficial hospedado no Supabase
 st.markdown(
     f"""
     <html lang="pt-BR">
     <head>
-        <!-- Diretivas PWA e Mobile Standalone -->
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="apple-mobile-web-app-title" content="Hostel PMS">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="theme-color" content="#2563eb">
-        <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22Sistema%20de%20Gestao%20de%20Hostel%22%2C%22short_name%22%3A%22Hostel%20PMS%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%2C%22theme_color%22%3A%22%232563eb%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fcdn-icons-png.flaticon.com%2F512%2F201%2F201623.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+        <link rel="icon" type="image/png" href="https://unmyzwkinjvexxanknku.supabase.co/storage/v1/object/public/publico/icone.png">
+        <link rel="apple-touch-icon" href="https://unmyzwkinjvexxanknku.supabase.co/storage/v1/object/public/publico/icone.png">
+        <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22Sistema%20de%20Gestao%20de%20Hostel%22%2C%22short_name%22%3A%22Hostel%20PMS%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%2C%22theme_color%22%3A%22%232563eb%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Funmyzwkinjvexxanknku.supabase.co%2Fstorage%2Fv1%2Fobject%2Fpublic%2Fpublico%2Ficone.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
         <meta name="google" content="notranslate">
     </head>
     <style>
