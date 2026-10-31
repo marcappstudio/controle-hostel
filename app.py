@@ -1,10 +1,12 @@
 import streamlit as st
 import secrets
+import inspect
+import traceback
 from datetime import datetime
 import database as db
 
 # ----------------------------------------------------
-# IMPORTAÇÃO DOS MÓDULOS DO SISTEMA
+# IMPORTAÇÃO SEGURA DOS MÓDULOS DO SISTEMA
 # ----------------------------------------------------
 from modulos.cadastros import (
     renderizar_hospedes,
@@ -13,29 +15,85 @@ from modulos.cadastros import (
 )
 from modulos.usuarios import renderizar_gestao_usuarios
 
-# Importação da tela de Hospedagem / Mapa de Ocupação
-renderizar_mapa_hospedagem = None
 try:
     import modulos.hospedagem as mod_hosp
-    if hasattr(mod_hosp, "renderizar_hospedagem"):
-        renderizar_mapa_hospedagem = mod_hosp.renderizar_hospedagem
-    elif hasattr(mod_hosp, "renderizar_mapa"):
-        renderizar_mapa_hospedagem = mod_hosp.renderizar_mapa
-    elif hasattr(mod_hosp, "renderizar_reservas"):
-        renderizar_mapa_hospedagem = mod_hosp.renderizar_reservas
-    elif hasattr(mod_hosp, "renderizar_tela"):
-        renderizar_mapa_hospedagem = mod_hosp.renderizar_tela
-except ImportError as err:
-    st.error(f"Erro ao carregar modulos/hospedagem.py: {err}")
+except ImportError:
+    mod_hosp = None
 
-# Importação protegida do módulo Financeiro (se existir)
-renderizar_financeiro = None
 try:
     import modulos.financeiro as mod_fin
-    if hasattr(mod_fin, "renderizar_financeiro"):
-        renderizar_financeiro = mod_fin.renderizar_financeiro
 except ImportError:
-    pass
+    mod_fin = None
+
+try:
+    import modulos.manutencao as mod_manut
+except ImportError:
+    mod_manut = None
+
+try:
+    import modulos.eventos as mod_eventos
+except ImportError:
+    mod_eventos = None
+
+
+# ----------------------------------------------------
+# EXECUTOR INTELIGENTE DE MÓDULOS (EVITA TYPEERROR)
+# ----------------------------------------------------
+def executar_funcao_modulo(modulo, nomes_possiveis):
+    """
+    Localiza a função correta dentro do módulo, verifica se ela exige
+    argumentos obrigatórios e executa com tratamento detalhado de erros.
+    """
+    if not modulo:
+        st.warning("Módulo não encontrado na pasta 'modulos/'.")
+        return
+
+    func_alvo = None
+    for nome in nomes_possiveis:
+        if hasattr(modulo, nome) and callable(getattr(modulo, nome)):
+            func_alvo = getattr(modulo, nome)
+            break
+
+    # Se não achar pelos nomes padrão, busca qualquer função iniciada por 'renderizar_'
+    if not func_alvo:
+        for attr_name in dir(modulo):
+            if attr_name.startswith("renderizar_"):
+                candidata = getattr(modulo, attr_name)
+                if callable(candidata):
+                    func_alvo = candidata
+                    break
+
+    if not func_alvo:
+        st.error(f"Nenhuma função de renderização encontrada no módulo {modulo.__name__}.")
+        return
+
+    try:
+        assinatura = inspect.signature(func_alvo)
+        parametros = assinatura.parameters
+        args_para_enviar = []
+
+        for nome_param, param in parametros.items():
+            # Se o parâmetro não tem valor padrão (é obrigatório)
+            if param.default is inspect.Parameter.empty and param.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD
+            ):
+                nome_p = nome_param.lower()
+                if "perfil" in nome_p or "cargo" in nome_p:
+                    args_para_enviar.append(st.session_state.get("usuario_perfil", "Administrador"))
+                elif "email" in nome_p:
+                    args_para_enviar.append(st.session_state.get("usuario_email", ""))
+                elif "user" in nome_p or "usuario" in nome_p or "nome" in nome_p:
+                    args_para_enviar.append(st.session_state.get("usuario_nome", "Administrador"))
+                else:
+                    args_para_enviar.append(None)
+
+        func_alvo(*args_para_enviar)
+
+    except Exception as e:
+        st.error(f"⚠️ Detalhe técnico do erro em `{func_alvo.__name__}`: **{type(e).__name__}: {e}**")
+        with st.expander("🔍 Ver rastreamento completo da linha do erro (Traceback)"):
+            st.code(traceback.format_exc(), language="python")
 
 
 # ==========================================
@@ -48,7 +106,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização para Web e Aplicativo Mobile
 st.markdown("""
     <style>
         .block-container {
@@ -61,6 +118,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Exibição de notificações salvas na sessão (Toast)
+if "toast_msg" in st.session_state and st.session_state["toast_msg"]:
+    st.toast(st.session_state["toast_msg"], icon=st.session_state.get("toast_icon", "✅"))
+    st.session_state["toast_msg"] = None
+
 
 # ==========================================
 # 2. CONTROLE DE SESSÃO PERSISTENTE E LOGIN
@@ -71,7 +133,6 @@ if "autenticado" not in st.session_state:
     st.session_state["usuario_nome"] = None
     st.session_state["usuario_perfil"] = None
 
-# Recuperação automática de login via token persistente (URL / App Mobile)
 token_param = st.query_params.get("session")
 
 if not st.session_state["autenticado"] and token_param:
@@ -181,9 +242,11 @@ with st.sidebar:
     st.markdown("---")
 
     opcoes_menu = [
-        "🛏️ Mapa de Ocupação",
+        "🛏️ Hospedagem e Reservas",
         "📁 Cadastros",
-        "💰 Financeiro",
+        "💰 Financeiro e Vendas",
+        "🛠️ Manutenção",
+        "🎉 Eventos",
         "👥 Gestão de Usuários"
     ]
 
@@ -207,18 +270,18 @@ with st.sidebar:
 # 5. ROTEAMENTO DAS TELAS DO SISTEMA
 # ==========================================
 
-# 1. Mapa de Ocupação / Hospedagem
-if menu_selecionado == "🛏️ Mapa de Ocupação":
-    if renderizar_mapa_hospedagem:
-        renderizar_mapa_hospedagem()
-    else:
-        st.error("A tela de hospedagem não pôde ser iniciada a partir de modulos/hospedagem.py.")
+# 1. Hospedagem / Mapa de Ocupação / Reservas
+if menu_selecionado == "🛏️ Hospedagem e Reservas":
+    executar_funcao_modulo(
+        mod_hosp, 
+        ["renderizar_hospedagem", "renderizar_mapa", "renderizar_reservas", "renderizar_tela"]
+    )
 
 # 2. Cadastros Gerais (Hóspedes, Quartos, Colaboradores)
 elif menu_selecionado == "📁 Cadastros":
     st.markdown("## 📁 Central de Cadastros")
     sub_cadastros = st.radio(
-        "Selecione o que deseja cadastrar:",
+        "Selecione o que deseja gerenciar:",
         ["Hóspedes", "Quartos e Camas", "Equipe (Colaboradores)"],
         horizontal=True
     )
@@ -231,15 +294,37 @@ elif menu_selecionado == "📁 Cadastros":
     elif sub_cadastros == "Equipe (Colaboradores)":
         renderizar_colaboradores()
 
-# 3. Financeiro
-elif menu_selecionado == "💰 Financeiro":
-    if renderizar_financeiro:
-        renderizar_financeiro()
+# 3. Financeiro e Vendas
+elif menu_selecionado == "💰 Financeiro e Vendas":
+    if mod_fin:
+        executar_funcao_modulo(
+            mod_fin, 
+            ["renderizar_financeiro", "renderizar_vendas", "renderizar_caixa"]
+        )
     else:
-        st.markdown("### 💰 Controle Financeiro")
-        st.info("Módulo financeiro ativo.")
+        st.info("Módulo financeiro não localizado.")
 
-# 4. Gestão de Usuários
+# 4. Manutenção
+elif menu_selecionado == "🛠️ Manutenção":
+    if mod_manut:
+        executar_funcao_modulo(
+            mod_manut, 
+            ["renderizar_manutencao", "renderizar_manutencoes"]
+        )
+    else:
+        st.info("Módulo de manutenção não localizado.")
+
+# 5. Eventos
+elif menu_selecionado == "🎉 Eventos":
+    if mod_eventos:
+        executar_funcao_modulo(
+            mod_eventos, 
+            ["renderizar_eventos", "renderizar_evento"]
+        )
+    else:
+        st.info("Módulo de eventos não localizado.")
+
+# 6. Gestão de Usuários
 elif menu_selecionado == "👥 Gestão de Usuários":
     if st.session_state["usuario_perfil"] not in ["Administrador", "Gerente"]:
         st.warning("🔒 Acesso restrito. Somente administradores e gerentes podem gerenciar contas de usuários.")
