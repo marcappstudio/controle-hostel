@@ -2,7 +2,6 @@ import re
 import json
 import uuid
 import urllib.parse
-import textwrap
 from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
@@ -11,6 +10,10 @@ from utils.formatadores import (
     formatar_data_br, extrair_data, ordenar_natural
 )
 from utils.exportadores import gerar_csv, gerar_pdf_tabela, gerar_pdf_recibo
+
+def sanitizar_html(html_str: str) -> str:
+    """Remove quebras de linha e indentação para impedir que o Markdown trate 4 espaços como bloco de código."""
+    return " ".join(line.strip() for line in html_str.splitlines() if line.strip())
 
 def renderizar_mapa(usuario_perfil):
     try:
@@ -74,12 +77,12 @@ def renderizar_mapa(usuario_perfil):
 
             q_ala = f" (Ala: {quarto.get('ala')})" if quarto.get("ala") else ""
 
-            header_quarto_html = textwrap.dedent(f"""
+            header_quarto_html = sanitizar_html(f"""
                 <div style='display:flex; align-items:center; justify-content:space-between; margin-top:16px; margin-bottom:8px;'>
                     <h3 style='margin:0; font-size:1.3rem; color:#1e293b;'>🚪 {q_nome}{q_ala} <span style='font-size:0.95rem; font-weight:normal; color:#64748b;'>— {q_perfil}{q_pcd}</span></h3>
                     <div>{badge_clima_quarto}</div>
                 </div>
-            """).strip()
+            """)
             st.markdown(header_quarto_html, unsafe_allow_html=True)
 
             camas_quarto = [c for c in camas if c.get("quarto_id") == q_id]
@@ -130,20 +133,20 @@ def renderizar_mapa(usuario_perfil):
                                 foto_html = f"<img src='{h_foto}' style='width:42px; height:42px; border-radius:50%; object-fit:cover; border:2px solid #cbd5e1; margin-right:8px;'>"
                             
                             aviso_saida = "<div style='color:#dc2626; font-weight:700; font-size:0.78rem; margin-top:3px;'>⚠️ Saída hoje às 11:00!</div>" if checkout_hoje else ""
-                            detalhes_hospede = textwrap.dedent(f"""
-                                <div style='display:flex; align-items:center; margin-top:8px;'>
-                                    {foto_html}
-                                    <div style='line-height:1.2;'>
-                                        <div style='font-weight:700; color:#0f172a; font-size:0.92rem;'>{nome_hospede_txt}</div>
-                                        <div style='font-size:0.75rem; color:#64748b;'>Loc: <code>{cod_loc}</code> • {canal_res}</div>
-                                    </div>
-                                </div>
-                                <div style='font-size:0.78rem; color:#475569; margin-top:6px;'>
-                                    📅 <b>Saída:</b> {f_fim}
-                                    {aviso_saida}
-                                    {info_empresa}
-                                </div>
-                            """).strip()
+                            
+                            detalhes_hospede = (
+                                f"<div style='display:flex; align-items:center; margin-top:8px;'>"
+                                f"{foto_html}"
+                                f"<div style='line-height:1.2;'>"
+                                f"<div style='font-weight:700; color:#0f172a; font-size:0.92rem;'>{nome_hospede_txt}</div>"
+                                f"<div style='font-size:0.75rem; color:#64748b;'>Loc: <code>{cod_loc}</code> • {canal_res}</div>"
+                                f"</div></div>"
+                                f"<div style='font-size:0.78rem; color:#475569; margin-top:6px;'>"
+                                f"📅 <b>Saída:</b> {f_fim}"
+                                f"{aviso_saida}"
+                                f"{info_empresa}"
+                                f"</div>"
+                            )
 
                 if c_status == "Disponível":
                     bg_color, border_cor = "#f0fdf4", "#86efac"
@@ -171,20 +174,21 @@ def renderizar_mapa(usuario_perfil):
                         f"</div>"
                     )
 
+                card_html = (
+                    f"<div style='background-color:{bg_color}; border:1.5px solid {border_cor}; border-radius:10px; padding:12px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);'>"
+                    f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
+                    f"<b style='font-size:1.05rem; color:#1e293b;'>🛏️ Cama {c_num}</b>"
+                    f"<div>{toalha_badge}</div>"
+                    f"</div>"
+                    f"<div style='font-size:0.75rem; color:#64748b; margin-bottom:4px;'>{c_tipo}</div>"
+                    f"<div style='margin-bottom:4px;'>{status_badge}</div>"
+                    f"{detalhes_hospede}"
+                    f"{bloco_wpp_html}"
+                    f"</div>"
+                )
+
                 with cols[idx % 4]:
-                    card_html = textwrap.dedent(f"""
-                        <div style='background-color:{bg_color}; border:1.5px solid {border_cor}; border-radius:10px; padding:12px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);'>
-                            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                                <b style='font-size:1.05rem; color:#1e293b;'>🛏️ Cama {c_num}</b>
-                                <div>{toalha_badge}</div>
-                            </div>
-                            <div style='font-size:0.75rem; color:#64748b; margin-bottom:4px;'>{c_tipo}</div>
-                            <div style='margin-bottom:4px;'>{status_badge}</div>
-                            {detalhes_hospede}
-                            {bloco_wpp_html}
-                        </div>
-                    """).strip()
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    st.markdown(sanitizar_html(card_html), unsafe_allow_html=True)
 
                     if usuario_perfil in ["Administrador", "Recepção"] and c_status == "Ocupado" and reserva_cama:
                         btn_c1, btn_c2 = st.columns(2)
