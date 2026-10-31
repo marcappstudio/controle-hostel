@@ -3,7 +3,9 @@ import secrets
 from datetime import datetime
 import database as db
 
-# Importação dos módulos do sistema
+# ----------------------------------------------------
+# IMPORTAÇÃO DOS MÓDULOS DO SISTEMA
+# ----------------------------------------------------
 from modulos.cadastros import (
     renderizar_hospedes,
     renderizar_quartos,
@@ -11,16 +13,30 @@ from modulos.cadastros import (
 )
 from modulos.usuarios import renderizar_gestao_usuarios
 
-# Importações protegidas de outros módulos (caso já existam na sua estrutura)
+# Importação da tela de Hospedagem / Mapa de Ocupação
+renderizar_mapa_hospedagem = None
 try:
-    from modulos.reservas import renderizar_reservas
-except ImportError:
-    renderizar_reservas = None
+    import modulos.hospedagem as mod_hosp
+    if hasattr(mod_hosp, "renderizar_hospedagem"):
+        renderizar_mapa_hospedagem = mod_hosp.renderizar_hospedagem
+    elif hasattr(mod_hosp, "renderizar_mapa"):
+        renderizar_mapa_hospedagem = mod_hosp.renderizar_mapa
+    elif hasattr(mod_hosp, "renderizar_reservas"):
+        renderizar_mapa_hospedagem = mod_hosp.renderizar_reservas
+    elif hasattr(mod_hosp, "renderizar_tela"):
+        renderizar_mapa_hospedagem = mod_hosp.renderizar_tela
+except ImportError as err:
+    st.error(f"Erro ao carregar modulos/hospedagem.py: {err}")
 
+# Importação protegida do módulo Financeiro (se existir)
+renderizar_financeiro = None
 try:
-    from modulos.financeiro import renderizar_financeiro
+    import modulos.financeiro as mod_fin
+    if hasattr(mod_fin, "renderizar_financeiro"):
+        renderizar_financeiro = mod_fin.renderizar_financeiro
 except ImportError:
-    renderizar_financeiro = None
+    pass
+
 
 # ==========================================
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -32,7 +48,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização básica para Web e Dispositivos Móveis
+# Estilização para Web e Aplicativo Mobile
 st.markdown("""
     <style>
         .block-container {
@@ -61,7 +77,6 @@ token_param = st.query_params.get("session")
 if not st.session_state["autenticado"] and token_param:
     dados_token = db.validar_token_sessao(token_param)
     if dados_token:
-        # Checa se o horário atual ainda permite o uso
         autorizado, msg_erro_horario = db.validar_horario_acesso(
             dados_token["email"], 
             dados_token.get("perfil", "Recepção")
@@ -115,7 +130,6 @@ if not st.session_state["autenticado"]:
                                 if perfil_user == "Suspenso":
                                     st.error("Este usuário está suspenso. Procure a Administração.")
                                 else:
-                                    # Validação da janela de horário
                                     autorizado, msg_horario = db.validar_horario_acesso(email_input, perfil_user)
                                     if not autorizado:
                                         st.error(f"⛔ Acesso Bloqueado: {msg_horario}")
@@ -125,7 +139,6 @@ if not st.session_state["autenticado"]:
                                         st.session_state["usuario_nome"] = nome_user
                                         st.session_state["usuario_perfil"] = perfil_user
 
-                                        # Salva o token na URL para persistência
                                         if lembrar_login:
                                             novo_token = db.gerar_token_sessao(email_input)
                                             if novo_token:
@@ -167,7 +180,6 @@ with st.sidebar:
     st.caption(f"Cargo / Nível: **{st.session_state['usuario_perfil']}**")
     st.markdown("---")
 
-    # Opções do menu com base nas permissões
     opcoes_menu = [
         "🛏️ Mapa de Ocupação",
         "📁 Cadastros",
@@ -179,7 +191,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Botão de Logout seguro
     if st.button("🚪 Sair do Sistema", use_container_width=True):
         if st.session_state.get("usuario_email"):
             db.revogar_token_sessao(st.session_state["usuario_email"])
@@ -196,13 +207,12 @@ with st.sidebar:
 # 5. ROTEAMENTO DAS TELAS DO SISTEMA
 # ==========================================
 
-# 1. Mapa de Ocupação / Reservas
+# 1. Mapa de Ocupação / Hospedagem
 if menu_selecionado == "🛏️ Mapa de Ocupação":
-    if renderizar_reservas:
-        renderizar_reservas()
+    if renderizar_mapa_hospedagem:
+        renderizar_mapa_hospedagem()
     else:
-        st.markdown("### 🛏️ Mapa de Ocupação e Reservas")
-        st.info("Módulo de reservas ativo. Conecte o arquivo correspondente caso esteja em outro submódulo.")
+        st.error("A tela de hospedagem não pôde ser iniciada a partir de modulos/hospedagem.py.")
 
 # 2. Cadastros Gerais (Hóspedes, Quartos, Colaboradores)
 elif menu_selecionado == "📁 Cadastros":
@@ -229,7 +239,7 @@ elif menu_selecionado == "💰 Financeiro":
         st.markdown("### 💰 Controle Financeiro")
         st.info("Módulo financeiro ativo.")
 
-# 4. Gestão de Usuários (Módulo Dedicado com Exclusão)
+# 4. Gestão de Usuários
 elif menu_selecionado == "👥 Gestão de Usuários":
     if st.session_state["usuario_perfil"] not in ["Administrador", "Gerente"]:
         st.warning("🔒 Acesso restrito. Somente administradores e gerentes podem gerenciar contas de usuários.")
