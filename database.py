@@ -325,3 +325,76 @@ def obter_resumo_alertas():
     except Exception:
         pass
     return alertas
+    import secrets
+from datetime import datetime
+import pytz
+
+def obter_horario_brasilia():
+    fuso = pytz.timezone("America/Sao_Paulo")
+    return datetime.now(fuso)
+
+def validar_horario_acesso(email_usuario, perfil_usuario):
+    """
+    Retorna (autorizado: bool, mensagem: str).
+    Administradores sempre têm acesso 24h.
+    """
+    if perfil_usuario == "Administrador":
+        return True, ""
+
+    try:
+        res = supabase.table("colaboradores").select("horario_inicio, horario_fim, restringir_horario").eq("email", email_usuario).execute()
+        if not res.data:
+            return True, ""  # Se não houver restrição explícita cadastrada, libera
+
+        dados = res.data[0]
+        if not dados.get("restringir_horario"):
+            return True, ""
+
+        h_inicio_str = dados.get("horario_inicio") or "00:00:00"
+        h_fim_str = dados.get("horario_fim") or "23:59:59"
+
+        agora = obter_horario_brasilia().time()
+        h_inicio = datetime.strptime(h_inicio_str, "%H:%M:%S").time()
+        h_fim = datetime.strptime(h_fim_str, "%H:%M:%S").time()
+
+        if h_inicio <= h_fim:
+            permitido = h_inicio <= agora <= h_fim
+        else:
+            # Para turnos noturnos que cruzam a meia-noite (ex: das 22h às 06h)
+            permitido = agora >= h_inicio or agora <= h_fim
+
+        if not permitido:
+            return False, f"Acesso permitido apenas entre {h_inicio.strftime('%H:%M')} e {h_fim.strftime('%H:%M')}."
+
+        return True, ""
+    except Exception as e:
+        print(f"Erro ao checar janela de horário: {e}")
+        return True, ""
+
+def gerar_token_sessao(email_usuario):
+    """Gera um token criptográfico único para manter o usuário logado no aparelho."""
+    token = secrets.token_urlsafe(32)
+    try:
+        supabase.table("colaboradores").update({"session_token": token}).eq("email", email_usuario).execute()
+        return token
+    except Exception:
+        return None
+
+def validar_token_sessao(token):
+    """Verifica se o token salvo na URL pertence a um colaborador ativo."""
+    if not token:
+        return None
+    try:
+        res = supabase.table("colaboradores").select("email, nome, perfil").eq("session_token", token).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0]
+        return None
+    except Exception:
+        return None
+
+def revogar_token_sessao(email_usuario):
+    """Limpa o token ao clicar em 'Sair do Sistema'."""
+    try:
+        supabase.table("colaboradores").update({"session_token": None}).eq("email", email_usuario).execute()
+    except Exception:
+        pass

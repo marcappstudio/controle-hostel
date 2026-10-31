@@ -6,3 +6,4 @@ fpdf2>=2.7.9
 gotrue>=2.4.0
 postgrest>=0.16.0
 pywebview>=5.0.0
+pytz

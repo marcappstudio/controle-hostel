@@ -173,7 +173,7 @@ def renderizar_cabecalho(titulo_menu: str, indice_menu: int):
         )
 
 # ==========================================
-# 2. TELA PRIVADA DE LOGIN
+# 2. GESTÃO DE SESSÃO PERSISTENTE E LOGIN
 # ==========================================
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
@@ -181,6 +181,24 @@ if "autenticado" not in st.session_state:
     st.session_state["usuario_nome"] = None
     st.session_state["usuario_perfil"] = None
 
+# 1. Recuperação Automática de Sessão (Mesmo dispositivo / Rotação de tela)
+token_param = st.query_params.get("session")
+
+if not st.session_state["autenticado"] and token_param:
+    dados_token = db.validar_token_sessao(token_param)
+    if dados_token:
+        # Checa se o horário atual ainda permite o uso
+        autorizado, msg_erro_horario = db.validar_horario_acesso(dados_token["email"], dados_token["perfil"])
+        if autorizado:
+            st.session_state["autenticado"] = True
+            st.session_state["usuario_email"] = dados_token["email"]
+            st.session_state["usuario_nome"] = dados_token["nome"]
+            st.session_state["usuario_perfil"] = dados_token["perfil"]
+        else:
+            st.query_params.clear()
+            st.error(f"⛔ Turno encerrado: {msg_erro_horario}")
+
+# 2. Tela de Login se não estiver autenticado
 if not st.session_state["autenticado"]:
     col_c1, col_c2, col_c3 = st.columns([1, 1.8, 1])
     with col_c2:
@@ -197,6 +215,7 @@ if not st.session_state["autenticado"]:
             with st.form("form_login"):
                 email_login = st.text_input("E-mail Cadastrado").strip()
                 senha_login = st.text_input("Senha de Acesso", type="password")
+                lembrar_login = st.checkbox("Mantenha-me conectado neste dispositivo", value=True)
                 btn_entrar = st.form_submit_button("Acessar Painel", use_container_width=True)
 
                 if btn_entrar:
@@ -210,12 +229,24 @@ if not st.session_state["autenticado"]:
                                 if perfil_user == "Suspenso":
                                     st.error("Este usuário está suspenso. Procure a Administração.")
                                 else:
-                                    st.session_state["autenticado"] = True
-                                    st.session_state["usuario_email"] = email_login
-                                    st.session_state["usuario_nome"] = nome_user
-                                    st.session_state["usuario_perfil"] = perfil_user
-                                    db.notificar_sucesso(f"Bem-vindo(a), {nome_user}!")
-                                    st.rerun()
+                                    # Validação de Horário de Expediente
+                                    autorizado, msg_horario = db.validar_horario_acesso(email_login, perfil_user)
+                                    if not autorizado:
+                                        st.error(f"⛔ Acesso Bloqueado: {msg_horario}")
+                                    else:
+                                        st.session_state["autenticado"] = True
+                                        st.session_state["usuario_email"] = email_login
+                                        st.session_state["usuario_nome"] = nome_user
+                                        st.session_state["usuario_perfil"] = perfil_user
+
+                                        # Salva sessão persistente
+                                        if lembrar_login:
+                                            token_criado = db.gerar_token_sessao(email_login)
+                                            if token_criado:
+                                                st.query_params["session"] = token_criado
+
+                                        db.notificar_sucesso(f"Bem-vindo(a), {nome_user}!")
+                                        st.rerun()
                             else:
                                 st.error("E-mail ou senha incorretos.")
                         except Exception as e:
@@ -223,7 +254,6 @@ if not st.session_state["autenticado"]:
 
         with tab_recuperar:
             st.markdown("##### 📩 Recuperação de Senha por E-mail")
-            st.caption("Digite seu e-mail cadastrado para receber o link de redefinição de senha diretamente na sua caixa de entrada.")
             with st.form("form_recuperar_senha"):
                 email_recup = st.text_input("E-mail Cadastrado:").strip()
                 if st.form_submit_button("Enviar Instruções de Recuperação", use_container_width=True):
@@ -326,11 +356,15 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 
+# Na barra lateral, substitua o bloco do botão "Sair do Sistema":
 if st.sidebar.button("🚪 Sair do Sistema (Logout)", use_container_width=True):
+    if st.session_state.get("usuario_email"):
+        db.revogar_token_sessao(st.session_state["usuario_email"])
     try:
         db.supabase.auth.sign_out()
     except Exception:
         pass
+    st.query_params.clear()
     st.session_state.clear()
     st.rerun()
 
