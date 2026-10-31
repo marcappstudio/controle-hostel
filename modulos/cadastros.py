@@ -601,53 +601,86 @@ def renderizar_camas():
         except Exception as e:
             st.error(f"Erro: {e}")
 
+import streamlit as st
+from datetime import time
+import database as db
+
 def renderizar_colaboradores():
-    aba_cad_colab, aba_cons_colab = st.tabs(["Cadastrar Colaborador", "Consultar / Editar Equipe"])
+    st.markdown("### 🧑‍💼 Cadastro e Gestão de Colaboradores")
+    
+    tab_listar, tab_novo = st.tabs(["📋 Lista de Colaboradores", "➕ Novo Colaborador / Editar"])
 
-    with aba_cad_colab:
-        with st.form("form_cad_colab"):
-            c_nome = st.text_input("Nome Completo")
-            c_nac = st.selectbox("Nacionalidade", ["Brasileira", "Estrangeira"])
-            c_cpf = st.text_input("CPF") if c_nac == "Brasileira" else ""
-            c_pass = st.text_input("Passaporte / RNE") if c_nac != "Brasileira" else ""
-            c_cargo = st.selectbox("Função / Cargo", ["Limpeza", "Recepção", "Voluntário", "Gerente", "Manutenção", "Outros"])
-            c_turno = st.selectbox("Turno de Trabalho", ["Manhã", "Tarde", "Noite", "Madrugada", "Integral"])
-            c_tel = st.text_input("Telefone de Contato")
+    with tab_novo:
+        with st.form("form_colaborador", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                nome = st.text_input("Nome Completo *").strip()
+                email = st.text_input("E-mail de Acesso *").strip().lower()
+                telefone = st.text_input("WhatsApp / Telefone").strip()
+                cargo = st.text_input("Função / Cargo (ex: Recepcionista, Limpeza, Voluntário)").strip()
 
-            if st.form_submit_button("Salvar Colaborador"):
-                if not c_nome:
-                    st.error("O nome do colaborador é obrigatório.")
-                elif c_nac == "Brasileira" and not validar_cpf(c_cpf):
-                    st.error("CPF inválido.")
+            with col2:
+                perfil = st.selectbox("Perfil de Acesso ao Sistema *", ["Recepção", "Limpeza", "Administrador"])
+                status = st.selectbox("Status", ["Ativo", "Suspenso"])
+                
+                st.markdown("---")
+                st.markdown("##### ⏰ Janela de Acesso Permitido")
+                restringir = st.checkbox("Restringir horário de login deste colaborador?", value=False)
+                
+                col_h1, col_h2 = st.columns(2)
+                with col_h1:
+                    # Permite selecionar hora e minuto livremente
+                    h_inicio = st.time_input("Entrada Permitida", value=time(8, 0), step=1800)
+                with col_h2:
+                    h_fim = st.time_input("Saída Permitida", value=time(17, 0), step=1800)
+
+            btn_salvar = st.form_submit_button("Salvar Colaborador", use_container_width=True)
+
+            if btn_salvar:
+                if not nome or not email:
+                    st.error("Nome e E-mail são obrigatórios.")
                 else:
-                    cpf_limpo = re.sub(r'\D', '', c_cpf) if c_cpf else None
-                    db.supabase.table("colaboradores").insert({
-                        "nome": c_nome, "nacionalidade": c_nac, "cpf": cpf_limpo,
-                        "passaporte_rne": c_pass if c_pass else None, "cargo": c_cargo,
-                        "turno": c_turno, "telefone": c_tel, "status": "Ativo"
-                    }).execute()
-                    db.notificar_sucesso("Colaborador cadastrado!")
-                    st.rerun()
-
-    with aba_cons_colab:
-        res_col = db.supabase.table("colaboradores").select("*").execute()
-        lista_col = res_col.data or []
-        if not lista_col:
-            st.info("Nenhum colaborador cadastrado.")
-        else:
-            col_labels = ["-- Selecione o Colaborador --"] + [f"{c['nome']} — {c['cargo']}" for c in lista_col]
-            col_escolhido = st.selectbox("Buscar Colaborador:", col_labels)
-            if col_escolhido != "-- Selecione o Colaborador --":
-                idx = col_labels.index(col_escolhido) - 1
-                col_obj = lista_col[idx]
-                with st.form("form_edit_colab"):
-                    e_nome = st.text_input("Nome", value=col_obj.get("nome", ""))
-                    e_cargo = st.selectbox("Cargo", ["Limpeza", "Recepção", "Voluntário", "Gerente", "Manutenção", "Outros"], index=0)
-                    e_status = st.selectbox("Situação", ["Ativo", "Inativo"], index=0 if col_obj.get("status") == "Ativo" else 1)
-                    if st.form_submit_button("Atualizar"):
-                        db.supabase.table("colaboradores").update({"nome": e_nome, "cargo": e_cargo, "status": e_status}).eq("id", col_obj["id"]).execute()
-                        db.notificar_sucesso("Colaborador atualizado!")
+                    payload = {
+                        "nome": nome,
+                        "email": email,
+                        "telefone": telefone,
+                        "cargo": cargo,
+                        "perfil": perfil,
+                        "status": status,
+                        "restringir_horario": restringir,
+                        "horario_inicio": h_inicio.strftime("%H:%M:%S"),
+                        "horario_fim": h_fim.strftime("%H:%M:%S")
+                    }
+                    
+                    try:
+                        # Insere ou atualiza pelo e-mail
+                        res = db.supabase.table("colaboradores").upsert(payload, on_conflict="email").execute()
+                        st.success(f"Colaborador {nome} salvo com sucesso!")
                         st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar colaborador: {e}")
+
+    with tab_listar:
+        # Exibição dos colaboradores com as janelas personalizadas
+        try:
+            dados = db.supabase.table("colaboradores").select("*").order("nome").execute().data
+            if dados:
+                for c in dados:
+                    with st.expander(f"{c['nome']} ({c.get('cargo', 'Sem cargo')}) - {c.get('perfil', 'Recepção')}"):
+                        st.write(f"**E-mail:** {c['email']}")
+                        st.write(f"**Telefone:** {c.get('telefone', '-')}")
+                        st.write(f"**Status:** {c.get('status', 'Ativo')}")
+                        
+                        if c.get("restringir_horario"):
+                            h_ini = str(c.get("horario_inicio", "00:00"))[:5]
+                            h_ter = str(c.get("horario_fim", "23:59"))[:5]
+                            st.warning(f"🔒 Acesso restrito entre **{h_ini}** e **{h_ter}**")
+                        else:
+                            st.info("🔓 Acesso 24 horas liberado (Sem restrição de horário)")
+            else:
+                st.caption("Nenhum colaborador cadastrado.")
+        except Exception as e:
+            st.error(f"Erro ao carregar colaboradores: {e}")
 
 def renderizar_prestadores():
     res_cat_serv = db.supabase.table("categorias_servicos").select("nome").order("nome").execute()
