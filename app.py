@@ -125,6 +125,16 @@ st.markdown(
         <meta name="google" content="notranslate">
     </head>
     <style>
+        /* Esconde o menu do Streamlit, botão de deploy e rodapé */
+        [data-testid="stToolbar"], [data-testid="stDecoration"], footer, #MainMenu {{
+            display: none !important;
+            visibility: hidden !important;
+        }}
+        
+        html, body, [class*="css"], [class*="st-"] {{
+            translate: no !important;
+        }}
+        /* ... restante do seu css ... */
         html, body, [class*="css"], [class*="st-"] {{
             translate: no !important;
         }}
