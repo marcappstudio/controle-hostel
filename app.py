@@ -179,58 +179,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-            display: none !important;
-            visibility: hidden !important;
-        }
-        
-        /* 2. Força-Bruta contra o selo "Hosted with Streamlit" e "Manage app" */
-        [data-testid="stToolbar"],
-        [data-testid="stDecoration"],
-        div[class*="viewerBadge"],
-        div[class*="stDeployButton"],
-        a[href*="streamlit.io/cloud"],
-        a[title*="Hosted with Streamlit"] {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-            z-index: -9999 !important;
-        }
-
-        /* 3. Ajusta o espaço em branco do topo */
-        .appview-container .main .block-container {
-            padding-top: 1rem !important;
-        }
-
-        /* Impede tradução automática que quebra layout */
-        html, body, [class*="css"], [class*="st-"] {
-            translate: no !important;
-        }
-        
-        /* Cards e perfis */
-        .alerta-badge-card {
-            padding: 8px 12px;
-            border-radius: 6px;
-            margin-bottom: 4px;
-            font-size: 0.88rem;
-        }
-        .user-profile-badge {
-            padding: 10px 12px;
-            border-radius: 8px;
-            margin-bottom: 12px;
-        }
-        .recibo-card {
-            padding: 20px;
-            border-radius: 8px;
-            font-family: monospace;
-            line-height: 1.4;
-        }
-        {css_tema}
-    </style>
-    </html>
-    """,
-    unsafe_allow_html=True
-)
 
 def renderizar_cabecalho(titulo_menu: str, indice_menu: int):
     for _ in range(indice_menu):
