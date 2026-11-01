@@ -18,7 +18,10 @@ def renderizar_manutencao(usuario_perfil):
     # ABA 1: PAINEL DE CHAMADOS
     # =========================================================================
     with aba_painel:
-        manutencoes = db.buscar_manutencoes(ordem_data=True)
+        try:
+            manutencoes = db.buscar_manutencoes(ordem_data=True)
+        except Exception:
+            manutencoes = []
 
         # Métricas no topo
         tot_pendentes = len([m for m in manutencoes if m.get("status") == "Pendente"])
@@ -70,7 +73,7 @@ def renderizar_manutencao(usuario_perfil):
                 st.download_button("📥 Baixar CSV", gerar_csv(df_exp), f"manutencoes_{hoje}.csv", "text/csv", use_container_width=True)
             with col_exp3:
                 cols_pdf = ["Título", "Tipo", "Prioridade", "Status", "Local", "Data Limite"]
-                pdf_bytes = gerar_pdf_tabela("Relatório de Manutenções e Ocorrências", cols_pdf, df_exp.to_dict(orient="records"), "L")
+                pdf_bytes = gerar_pdf_tabela("Relatório de Manutenções", cols_pdf, df_exp.to_dict(orient="records"), "L")
                 st.download_button("📕 Baixar PDF", pdf_bytes, f"manutencoes_{hoje}.pdf", "application/pdf", use_container_width=True)
             st.markdown("---")
 
@@ -86,7 +89,6 @@ def renderizar_manutencao(usuario_perfil):
                 dt_ag = extrair_data(m.get("data_agendada"))
                 atrasada = bool(dt_ag and dt_ag < hoje and status != "Concluída")
 
-                # Monta identificação do local
                 loc_tipo = m.get("local_tipo", "Geral")
                 detalhe_loc = m.get("local_detalhe", "")
                 if loc_tipo == "Quarto" and m.get("quartos"):
@@ -97,16 +99,7 @@ def renderizar_manutencao(usuario_perfil):
                 else:
                     local_str = f"🏢 {loc_tipo}: {detalhe_loc}" if detalhe_loc else f"🏢 {loc_tipo}"
 
-                # Estilos visuais por prioridade
-                if prio == "Crítica":
-                    cor_prio = "#dc2626"
-                elif prio == "Alta":
-                    cor_prio = "#ea580c"
-                elif prio == "Média":
-                    cor_prio = "#d97706"
-                else:
-                    cor_prio = "#16a34a"
-
+                cor_prio = "#dc2626" if prio == "Crítica" else ("#ea580c" if prio == "Alta" else ("#d97706" if prio == "Média" else "#16a34a"))
                 badge_atraso = " <span style='background-color: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 4px; font-weight: bold;'>⚠️ Atrasada!</span>" if atrasada else ""
                 badge_status = f"<span style='background-color: #e2e8f0; color: #1e293b; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;'>{status}</span>"
 
@@ -118,8 +111,7 @@ def renderizar_manutencao(usuario_perfil):
                             <div>{badge_status} {badge_atraso}</div>
                         </div>
                         <div style='font-size: 0.88rem; color: #475569; margin-top: 4px;'>
-                            <b>Local:</b> {local_str} &nbsp;|&nbsp; 
-                            <b>Tipo:</b> {tipo} &nbsp;|&nbsp; 
+                            <b>Local:</b> {local_str} &nbsp;|&nbsp; <b>Tipo:</b> {tipo} &nbsp;|&nbsp; 
                             <b>Prioridade:</b> <span style='color: {cor_prio}; font-weight: bold;'>{prio}</span> &nbsp;|&nbsp; 
                             <b>Data Limite:</b> {dt_ag.strftime('%d/%m/%Y') if dt_ag else 'Não informada'}
                         </div>
@@ -140,54 +132,66 @@ def renderizar_manutencao(usuario_perfil):
 
                     with c_det2:
                         if status == "Pendente":
-                            if st.button("▶️ Iniciar Reparo (Em Andamento)", key=f"btn_ini_{m_id}", use_container_width=True):
-                                db.supabase.table("manutencoes").update({"status": "Em Andamento"}).eq("id", m_id).execute()
-                                st.success("Chamado colocado em andamento!")
-                                st.rerun()
+                            if st.button("▶️ Iniciar Reparo", key=f"btn_ini_{m_id}", use_container_width=True):
+                                try:
+                                    db.supabase.table("manutencoes").update({"status": "Em Andamento"}).eq("id", m_id).execute()
+                                    st.success("Chamado colocado em andamento!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Falha ao atualizar: {e}")
 
                         if status in ["Pendente", "Em Andamento"]:
                             with st.popover("✅ Concluir Manutenção"):
                                 custo_f = st.number_input("Custo Final Efetivado (R$)", min_value=0.0, value=float(m.get("custo_estimado") or 0.0), format="%.2f", key=f"cf_{m_id}")
-                                obs_concl = st.text_area("Observações da Conclusão", placeholder="Ex: Peça substituída, testado e funcionando.", key=f"obs_c_{m_id}")
+                                obs_concl = st.text_area("Observações da Conclusão", placeholder="Ex: Peça substituída.", key=f"obs_c_{m_id}")
                                 if st.button("Confirmar Conclusão", key=f"btn_concl_{m_id}"):
-                                    db.supabase.table("manutencoes").update({
-                                        "status": "Concluída",
-                                        "custo_real": custo_f,
-                                        "observacoes_conclusao": obs_concl,
-                                        "data_conclusao": datetime.now().isoformat()
-                                    }).eq("id", m_id).execute()
-                                    st.success("Manutenção concluída e arquivada!")
-                                    st.rerun()
+                                    try:
+                                        db.supabase.table("manutencoes").update({
+                                            "status": "Concluída",
+                                            "custo_real": custo_f,
+                                            "observacoes_conclusao": obs_concl,
+                                            "data_conclusao": datetime.now().isoformat()
+                                        }).eq("id", m_id).execute()
+                                        st.success("Manutenção concluída!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Falha ao concluir: {e}")
 
                         if usuario_perfil == "Administrador":
                             if st.button("🗑️ Excluir Chamado", key=f"btn_del_manut_{m_id}", use_container_width=True):
-                                db.supabase.table("manutencoes").delete().eq("id", m_id).execute()
-                                st.success("Registro removido!")
-                                st.rerun()
+                                try:
+                                    db.supabase.table("manutencoes").delete().eq("id", m_id).execute()
+                                    st.success("Registro removido!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Falha ao excluir: {e}")
                 st.markdown("---")
 
     # =========================================================================
-    # ABA 2: REGISTRAR CHAMADO
+    # ABA 2: REGISTRAR CHAMADO (BLINDAGEM DE PAYLOAD APLICADA)
     # =========================================================================
     with aba_nova:
         st.subheader("➕ Abrir Ordem de Serviço ou Chamado")
         
-        res_quartos = db.supabase.table("quartos").select("id, nome, ala").execute()
-        quartos_lista = res_quartos.data or []
-        camas_lista = db.buscar_camas_com_quartos()
-        res_prest = db.supabase.table("prestadores").select("id, nome_razao, categoria_servico").execute()
-        prestadores = res_prest.data or []
+        try:
+            res_quartos = db.supabase.table("quartos").select("id, nome, ala").execute()
+            quartos_lista = res_quartos.data or []
+            camas_lista = db.buscar_camas_com_quartos()
+            res_prest = db.supabase.table("prestadores").select("id, nome_razao, categoria_servico").execute()
+            prestadores = res_prest.data or []
+        except Exception:
+            quartos_lista, camas_lista, prestadores = [], [], []
 
         with st.form("form_nova_manutencao"):
             col_t1, col_t2 = st.columns([2, 1])
             with col_t1:
-                titulo = st.text_input("Título do Chamado (ex: Reparo no chuveiro elétrico, Troca do filtro)", placeholder="Identificação concisa da ocorrência")
+                titulo = st.text_input("Título do Chamado", placeholder="Ex: Reparo no chuveiro elétrico")
             with col_t2:
                 tipo = st.selectbox("Tipo de Manutenção:", ["Corretiva", "Preventiva"])
 
             col_p1, col_p2, col_p3 = st.columns(3)
             with col_p1:
-                prioridade = st.selectbox("Nível de Prioridade:", ["Baixa", "Média", "Alta", "Crítica"])
+                prioridade = st.selectbox("Nível de Prioridade:", ["Baixa", "Média", "Alta", "Crítica"], index=1)
             with col_p2:
                 data_agendada = st.date_input("Data Limite / Execução:", value=hoje, format="DD/MM/YYYY")
             with col_p3:
@@ -218,7 +222,7 @@ def renderizar_manutencao(usuario_perfil):
                     else:
                         st.caption("Nenhuma cama cadastrada.")
                 else:
-                    local_detalhe = st.text_input("Nome do Local ou Equipamento:", placeholder="Ex: Bebedouro Recepção, Ar-condicionado Sala")
+                    local_detalhe = st.text_input("Nome do Local ou Equipamento:", placeholder="Ex: Bebedouro Recepção")
 
             st.markdown("##### 👤 Atribuição de Responsável")
             col_r1, col_r2 = st.columns(2)
@@ -229,7 +233,7 @@ def renderizar_manutencao(usuario_perfil):
                 prest_escolhido = st.selectbox("Prestador Externo Cadastrado:", list(p_opcoes.keys()))
                 prestador_id_sel = p_opcoes[prest_escolhido]
             with col_r2:
-                responsavel_nome = st.text_input("Nome do Responsável Interno (se aplicável):", placeholder="Ex: João da Manutenção")
+                responsavel_nome = st.text_input("Nome do Responsável Interno (se aplicável):")
 
             descricao = st.text_area("Descrição Detalhada do Problema / Instruções:")
 
@@ -237,23 +241,39 @@ def renderizar_manutencao(usuario_perfil):
                 if not titulo:
                     st.error("Informe um título para o chamado.")
                 else:
-                    db.supabase.table("manutencoes").insert({
-                        "titulo": titulo,
-                        "descricao": descricao,
+                    # TÉCNICA 1: Construtor dinâmico de Payload. Evita enviar "None/Nulo"
+                    payload = {
+                        "titulo": titulo.strip(),
+                        "descricao": descricao.strip() if descricao else None,
                         "tipo": tipo,
                         "prioridade": prioridade,
                         "status": "Pendente",
                         "local_tipo": local_tipo,
-                        "quarto_id": quarto_id_sel,
-                        "cama_id": cama_id_sel,
-                        "local_detalhe": local_detalhe,
                         "data_agendada": data_agendada.isoformat(),
-                        "custo_estimado": custo_estimado,
-                        "prestador_id": prestador_id_sel,
-                        "responsavel_nome": responsavel_nome
-                    }).execute()
-                    st.success("Chamado de manutenção cadastrado com sucesso!")
-                    st.rerun()
+                        "custo_estimado": float(custo_estimado)
+                    }
+                    
+                    if local_detalhe and local_detalhe.strip():
+                        payload["local_detalhe"] = local_detalhe.strip()
+                    if quarto_id_sel is not None: 
+                        payload["quarto_id"] = quarto_id_sel
+                    if cama_id_sel is not None: 
+                        payload["cama_id"] = cama_id_sel
+                    if prestador_id_sel is not None: 
+                        payload["prestador_id"] = prestador_id_sel
+                    if responsavel_nome and responsavel_nome.strip(): 
+                        payload["responsavel_nome"] = responsavel_nome.strip()
+
+                    try:
+                        db.supabase.table("manutencoes").insert(payload).execute()
+                        st.success("Chamado de manutenção cadastrado com sucesso!")
+                        st.rerun()
+                    except Exception as e:
+                        # TÉCNICA 2: Captura bruta de erro da API para contornar o redator do Streamlit
+                        erro_db = str(e)
+                        if hasattr(e, 'details'): erro_db += f" | {e.details}"
+                        if hasattr(e, 'message'): erro_db += f" | {e.message}"
+                        st.error(f"🛑 Erro do Banco de Dados: {erro_db}")
 
     # =========================================================================
     # ABA 3: PROGRAMAÇÃO PREVENTIVA
@@ -263,24 +283,24 @@ def renderizar_manutencao(usuario_perfil):
         st.caption("Crie agendamentos de rotina com prazos pré-configurados:")
 
         rotinas_padrao = [
-            {"titulo": "Troca de Filtro de Água (Bebedouro)", "meses": 6, "prioridade": "Alta", "local": "Equipamento Geral", "detalhe": "Filtro Central / Bebedouro"},
-            {"titulo": "Higienização e Limpeza dos Filtros de Ar-Condicionado", "meses": 3, "prioridade": "Média", "local": "Área Comum", "detalhe": "Aparelhos de Ar-Condicionado"},
-            {"titulo": "Dedetização e Controle de Pragas", "meses": 6, "prioridade": "Crítica", "local": "Área Comum", "detalhe": "Todo o Hostel"},
-            {"titulo": "Revisão Elétrica e Quadros de Disjuntores", "meses": 12, "prioridade": "Alta", "local": "Equipamento Geral", "detalhe": "Quadro Geral de Energia"},
-            {"titulo": "Inspeção e Recarga de Extintores de Incêndio", "meses": 12, "prioridade": "Crítica", "local": "Área Comum", "detalhe": "Extintores de Incêndio"}
+            {"titulo": "Troca de Filtro de Água", "meses": 6, "prioridade": "Alta", "local": "Equipamento Geral", "detalhe": "Filtro Central / Bebedouro"},
+            {"titulo": "Limpeza Filtros Ar-Condicionado", "meses": 3, "prioridade": "Média", "local": "Área Comum", "detalhe": "Aparelhos de Ar-Condicionado"},
+            {"titulo": "Dedetização", "meses": 6, "prioridade": "Crítica", "local": "Área Comum", "detalhe": "Todo o Hostel"},
+            {"titulo": "Revisão Elétrica", "meses": 12, "prioridade": "Alta", "local": "Equipamento Geral", "detalhe": "Quadro de Energia"},
+            {"titulo": "Recarga de Extintores", "meses": 12, "prioridade": "Crítica", "local": "Área Comum", "detalhe": "Extintores de Incêndio"}
         ]
 
         for rot in rotinas_padrao:
             c_r1, c_r2, c_r3 = st.columns([3, 2, 2])
             with c_r1:
                 st.write(f"🔧 **{rot['titulo']}**")
-                st.caption(f"Frequência sugerida: cada **{rot['meses']} meses** | Prioridade: **{rot['prioridade']}**")
+                st.caption(f"A cada **{rot['meses']} meses** | Prioridade: **{rot['prioridade']}**")
             with c_r2:
                 data_sugerida = hoje + timedelta(days=rot["meses"] * 30)
                 st.write(f"📅 Sugestão: **{data_sugerida.strftime('%d/%m/%Y')}**")
             with c_r3:
                 if st.button("Agendar Preventiva", key=f"btn_rot_{rot['titulo']}"):
-                    db.supabase.table("manutencoes").insert({
+                    payload_prev = {
                         "titulo": rot["titulo"],
                         "tipo": "Preventiva",
                         "prioridade": rot["prioridade"],
@@ -288,8 +308,14 @@ def renderizar_manutencao(usuario_perfil):
                         "local_tipo": rot["local"],
                         "local_detalhe": rot["detalhe"],
                         "data_agendada": data_sugerida.isoformat(),
-                        "descricao": f"Rotina periódica preventiva com intervalo de {rot['meses']} meses."
-                    }).execute()
-                    st.success(f"Preventiva '{rot['titulo']}' agendada para {data_sugerida.strftime('%d/%m/%Y')}!")
-                    st.rerun()
+                        "descricao": f"Rotina periódica com intervalo de {rot['meses']} meses."
+                    }
+                    try:
+                        db.supabase.table("manutencoes").insert(payload_prev).execute()
+                        st.success(f"Preventiva '{rot['titulo']}' agendada para {data_sugerida.strftime('%d/%m/%Y')}!")
+                        st.rerun()
+                    except Exception as e:
+                        erro_prev = str(e)
+                        if hasattr(e, 'message'): erro_prev += f" - {e.message}"
+                        st.error(f"Erro do BD: {erro_prev}")
             st.markdown("---")
