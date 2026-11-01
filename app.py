@@ -1,131 +1,180 @@
-import streamlit as st
 import secrets
-import inspect
-import traceback
-from datetime import datetime
+import importlib
+import streamlit as st
 import database as db
-
-# ----------------------------------------------------
-# IMPORTAÇÃO SEGURA DOS MÓDULOS DO SISTEMA
-# ----------------------------------------------------
-from modulos.cadastros import (
-    renderizar_hospedes,
-    renderizar_quartos,
-    renderizar_colaboradores
+from utils import formatadores, exportadores
+from modulos import (
+    dashboard,
+    hospedagem,
+    operacoes,
+    cadastros,
+    gestao,
+    manutencao,
+    configuracoes,
+    fiscal,
+    ajuda_lgpd
 )
-from modulos.usuarios import renderizar_gestao_usuarios
 
-try:
-    import modulos.hospedagem as mod_hosp
-except ImportError:
-    mod_hosp = None
-
-try:
-    import modulos.financeiro as mod_fin
-except ImportError:
-    mod_fin = None
-
-try:
-    import modulos.manutencao as mod_manut
-except ImportError:
-    mod_manut = None
-
-try:
-    import modulos.eventos as mod_eventos
-except ImportError:
-    mod_eventos = None
-
-
-# ----------------------------------------------------
-# EXECUTOR INTELIGENTE DE MÓDULOS (EVITA TYPEERROR)
-# ----------------------------------------------------
-def executar_funcao_modulo(modulo, nomes_possiveis):
-    """
-    Localiza a função correta dentro do módulo, verifica se ela exige
-    argumentos obrigatórios e executa com tratamento detalhado de erros.
-    """
-    if not modulo:
-        st.warning("Módulo não encontrado na pasta 'modulos/'.")
-        return
-
-    func_alvo = None
-    for nome in nomes_possiveis:
-        if hasattr(modulo, nome) and callable(getattr(modulo, nome)):
-            func_alvo = getattr(modulo, nome)
-            break
-
-    # Se não achar pelos nomes padrão, busca qualquer função iniciada por 'renderizar_'
-    if not func_alvo:
-        for attr_name in dir(modulo):
-            if attr_name.startswith("renderizar_"):
-                candidata = getattr(modulo, attr_name)
-                if callable(candidata):
-                    func_alvo = candidata
-                    break
-
-    if not func_alvo:
-        st.error(f"Nenhuma função de renderização encontrada no módulo {modulo.__name__}.")
-        return
-
-    try:
-        assinatura = inspect.signature(func_alvo)
-        parametros = assinatura.parameters
-        args_para_enviar = []
-
-        for nome_param, param in parametros.items():
-            # Se o parâmetro não tem valor padrão (é obrigatório)
-            if param.default is inspect.Parameter.empty and param.kind in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD
-            ):
-                nome_p = nome_param.lower()
-                if "perfil" in nome_p or "cargo" in nome_p:
-                    args_para_enviar.append(st.session_state.get("usuario_perfil", "Administrador"))
-                elif "email" in nome_p:
-                    args_para_enviar.append(st.session_state.get("usuario_email", ""))
-                elif "user" in nome_p or "usuario" in nome_p or "nome" in nome_p:
-                    args_para_enviar.append(st.session_state.get("usuario_nome", "Administrador"))
-                else:
-                    args_para_enviar.append(None)
-
-        func_alvo(*args_para_enviar)
-
-    except Exception as e:
-        st.error(f"⚠️ Detalhe técnico do erro em `{func_alvo.__name__}`: **{type(e).__name__}: {e}**")
-        with st.expander("🔍 Ver rastreamento completo da linha do erro (Traceback)"):
-            st.code(traceback.format_exc(), language="python")
-
+# Força o recarregamento em tempo real de todos os módulos
+importlib.reload(formatadores)
+importlib.reload(exportadores)
+importlib.reload(db)
+importlib.reload(dashboard)
+importlib.reload(hospedagem)
+importlib.reload(operacoes)
+importlib.reload(cadastros)
+importlib.reload(gestao)
+importlib.reload(manutencao)
+importlib.reload(configuracoes)
+importlib.reload(fiscal)
+importlib.reload(ajuda_lgpd)
 
 # ==========================================
-# 1. CONFIGURAÇÃO DA PÁGINA
+# 1. CONFIGURAÇÃO, TEMA, PWA E CSS
 # ==========================================
 st.set_page_config(
-    page_title="Hostel PMS - Sistema de Gestão",
-    page_icon="🏨",
+    page_title="Sistema de Gestão de Hostel",
+    page_icon="https://unmyzwkinjvexxanknku.supabase.co/storage/v1/object/public/publico/icone.png",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-    <style>
-        .block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 2rem;
-        }
-        [data-testid="stSidebarNav"] {
-            display: none;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# Exibição de notificações salvas na sessão (Toast)
-if "toast_msg" in st.session_state and st.session_state["toast_msg"]:
+# Notificações flutuantes de ação (toast persistente)
+if "toast_msg" in st.session_state:
     st.toast(st.session_state["toast_msg"], icon=st.session_state.get("toast_icon", "✅"))
-    st.session_state["toast_msg"] = None
+    del st.session_state["toast_msg"]
+    if "toast_icon" in st.session_state:
+        del st.session_state["toast_icon"]
 
+# Recuperação de preferência de tema (Claro / Escuro)
+if "tema_sistema" not in st.session_state:
+    try:
+        res_t = db.supabase.table("configuracoes").select("valor").eq("chave", "tema_sistema").execute()
+        st.session_state["tema_sistema"] = res_t.data[0]["valor"] if (res_t.data and res_t.data[0].get("valor")) else "Claro"
+    except Exception:
+        st.session_state["tema_sistema"] = "Claro"
+
+tema_atual = st.session_state.get("tema_sistema", "Claro")
+
+if tema_atual == "Escuro":
+    css_tema = """
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+            background-color: #0b1120 !important;
+            color: #f1f5f9 !important;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #0f172a !important;
+            border-right: 1px solid #1e293b !important;
+        }
+        .user-profile-badge {
+            background-color: #1e293b !important;
+            border: 1px solid #334155 !important;
+            color: #f8fafc !important;
+        }
+        .recibo-card {
+            background-color: #1e293b !important;
+            border: 2px dashed #475569 !important;
+            color: #f8fafc !important;
+        }
+        div[data-testid="stMetricValue"] {
+            color: #60a5fa !important;
+        }
+        div[data-testid="stExpander"] {
+            background-color: #0f172a !important;
+            border-color: #334155 !important;
+        }
+        input, select, textarea {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+        }
+    """
+else:
+    css_tema = """
+        html, body, [data-testid="stAppViewContainer"] {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #f8fafc !important;
+            border-right: 1px solid #e2e8f0 !important;
+        }
+        .user-profile-badge {
+            background-color: #f1f5f9 !important;
+            border: 1px solid #cbd5e1 !important;
+            color: #0f172a !important;
+        }
+        .recibo-card {
+            background-color: #ffffff !important;
+            border: 2px dashed #94a3b8 !important;
+            color: #0f172a !important;
+        }
+    """
+
+# Injeção unificada de PWA com ícone oficial hospedado no Supabase
+st.markdown(
+    f"""
+    <html lang="pt-BR">
+    <head>
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="Hostel PMS">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="theme-color" content="#2563eb">
+        <link rel="icon" type="image/png" href="https://unmyzwkinjvexxanknku.supabase.co/storage/v1/object/public/publico/icone.png">
+        <link rel="apple-touch-icon" href="https://unmyzwkinjvexxanknku.supabase.co/storage/v1/object/public/publico/icone.png">
+        <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22Sistema%20de%20Gestao%20de%20Hostel%22%2C%22short_name%22%3A%22Hostel%20PMS%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%2C%22theme_color%22%3A%22%232563eb%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Funmyzwkinjvexxanknku.supabase.co%2Fstorage%2Fv1%2Fobject%2Fpublic%2Fpublico%2Ficone.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+        <meta name="google" content="notranslate">
+    </head>
+    <style>
+        html, body, [class*="css"], [class*="st-"] {{
+            translate: no !important;
+        }}
+        .alerta-badge-card {{
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            font-size: 0.88rem;
+        }}
+        .user-profile-badge {{
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }}
+        .recibo-card {{
+            padding: 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            line-height: 1.4;
+        }}
+        {css_tema}
+    </style>
+    </html>
+    """,
+    unsafe_allow_html=True
+)
+
+def renderizar_cabecalho(titulo_menu: str, indice_menu: int):
+    for _ in range(indice_menu):
+        st.empty()
+    cor_texto = "#93c5fd" if tema_atual == "Escuro" else "#1e293b"
+    with st.container():
+        st.markdown(
+            f"""
+            <meta name="google" content="notranslate">
+            <div id="cabecalho-hostel-{indice_menu}" class="notranslate" translate="no" 
+                 style="padding-bottom: 10px; margin-bottom: 20px; border-bottom: 2px solid {'#334155' if tema_atual == 'Escuro' else '#e2e8f0'};">
+                <span style="color: {'#94a3b8' if tema_atual == 'Escuro' else '#64748b'}; font-size: 0.9rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
+                    🏨 Sistema Integrado de Gestão Hoteleira
+                </span>
+                <h1 style="margin: 4px 0 0 0; padding: 0; font-size: 2rem; font-weight: 700; color: {cor_texto};">
+                    {titulo_menu}
+                </h1>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ==========================================
-# 2. CONTROLE DE SESSÃO PERSISTENTE E LOGIN
+# 2. GESTÃO DE SESSÃO PERSISTENTE E LOGIN
 # ==========================================
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
@@ -133,200 +182,334 @@ if "autenticado" not in st.session_state:
     st.session_state["usuario_nome"] = None
     st.session_state["usuario_perfil"] = None
 
+# 1. Recuperação Automática de Sessão (Mesmo dispositivo / Rotação de tela)
 token_param = st.query_params.get("session")
 
 if not st.session_state["autenticado"] and token_param:
     dados_token = db.validar_token_sessao(token_param)
     if dados_token:
-        autorizado, msg_erro_horario = db.validar_horario_acesso(
-            dados_token["email"], 
-            dados_token.get("perfil", "Recepção")
-        )
+        # Checa se o horário atual ainda permite o uso
+        autorizado, msg_erro_horario = db.validar_horario_acesso(dados_token["email"], dados_token["perfil"])
         if autorizado:
             st.session_state["autenticado"] = True
             st.session_state["usuario_email"] = dados_token["email"]
             st.session_state["usuario_nome"] = dados_token["nome"]
-            st.session_state["usuario_perfil"] = dados_token.get("perfil", "Recepção")
+            st.session_state["usuario_perfil"] = dados_token["perfil"]
         else:
             st.query_params.clear()
             st.error(f"⛔ Turno encerrado: {msg_erro_horario}")
 
-
-# ==========================================
-# 3. TELA DE LOGIN (QUANDO NÃO AUTENTICADO)
-# ==========================================
+# 2. Tela de Login se não estiver autenticado
 if not st.session_state["autenticado"]:
-    col_vazia1, col_login, col_vazia2 = st.columns([1, 1.8, 1])
-
-    with col_login:
-        logo_url = db.obter_logo()
-        if logo_url:
-            st.image(logo_url, width=220)
-
+    col_c1, col_c2, col_c3 = st.columns([1, 1.8, 1])
+    with col_c2:
+        logo_login = db.obter_logo()
+        if logo_login:
+            st.image(logo_login, width=220)
+        
         st.markdown("## 🏨 Sistema de Gestão de Hostel")
         st.caption("Acesso restrito para colaboradores autorizados.")
 
-        tab_entrar, tab_esqueci = st.tabs(["🔑 Entrar no Painel", "❓ Esqueci Minha Senha"])
+        tab_login, tab_recuperar = st.tabs(["🔑 Entrar no Sistema", "❓ Esqueci Minha Senha"])
 
-        with tab_entrar:
+        with tab_login:
             with st.form("form_login"):
-                email_input = st.text_input("E-mail Cadastrado").strip().lower()
-                senha_input = st.text_input("Senha de Acesso", type="password")
+                email_login = st.text_input("E-mail Cadastrado").strip()
+                senha_login = st.text_input("Senha de Acesso", type="password")
                 lembrar_login = st.checkbox("Mantenha-me conectado neste dispositivo", value=True)
-                btn_acessar = st.form_submit_button("Acessar Painel", use_container_width=True)
+                btn_entrar = st.form_submit_button("Acessar Painel", use_container_width=True)
 
-                if btn_acessar:
-                    if not email_input or not senha_input:
-                        st.error("Informe seu e-mail e senha.")
+                if btn_entrar:
+                    if not email_login or not senha_login:
+                        st.error("Preencha o e-mail e a senha.")
                     else:
                         try:
-                            auth_resp = db.supabase.auth.sign_in_with_password({
-                                "email": email_input, 
-                                "password": senha_input
-                            })
-
+                            auth_resp = db.supabase.auth.sign_in_with_password({"email": email_login, "password": senha_login})
                             if auth_resp.user:
-                                perfil_user, nome_user = db.obter_perfil_usuario(email_input, auth_resp.user)
-
+                                perfil_user, nome_user = db.obter_perfil_usuario(email_login, auth_resp.user)
                                 if perfil_user == "Suspenso":
                                     st.error("Este usuário está suspenso. Procure a Administração.")
                                 else:
-                                    autorizado, msg_horario = db.validar_horario_acesso(email_input, perfil_user)
+                                    # Validação de Horário de Expediente
+                                    autorizado, msg_horario = db.validar_horario_acesso(email_login, perfil_user)
                                     if not autorizado:
                                         st.error(f"⛔ Acesso Bloqueado: {msg_horario}")
                                     else:
                                         st.session_state["autenticado"] = True
-                                        st.session_state["usuario_email"] = email_input
+                                        st.session_state["usuario_email"] = email_login
                                         st.session_state["usuario_nome"] = nome_user
                                         st.session_state["usuario_perfil"] = perfil_user
 
+                                        # Salva sessão persistente
                                         if lembrar_login:
-                                            novo_token = db.gerar_token_sessao(email_input)
-                                            if novo_token:
-                                                st.query_params["session"] = novo_token
+                                            token_criado = db.gerar_token_sessao(email_login)
+                                            if token_criado:
+                                                st.query_params["session"] = token_criado
 
                                         db.notificar_sucesso(f"Bem-vindo(a), {nome_user}!")
                                         st.rerun()
                             else:
-                                st.error("Credenciais inválidas. Verifique seu e-mail e senha.")
+                                st.error("E-mail ou senha incorretos.")
                         except Exception as e:
                             st.error(f"Falha na autenticação: {e}")
 
-        with tab_esqueci:
+        with tab_recuperar:
             st.markdown("##### 📩 Recuperação de Senha por E-mail")
-            with st.form("form_recuperacao"):
-                email_recup = st.text_input("E-mail Cadastrado:").strip().lower()
-                if st.form_submit_button("Enviar E-mail de Recuperação", use_container_width=True):
+            with st.form("form_recuperar_senha"):
+                email_recup = st.text_input("E-mail Cadastrado:").strip()
+                if st.form_submit_button("Enviar Instruções de Recuperação", use_container_width=True):
                     if not email_recup:
-                        st.error("Informe o e-mail cadastrado.")
+                        st.error("Informe seu e-mail.")
                     else:
                         ok, msg = db.solicitar_recuperacao_senha(email_recup)
                         if ok:
                             st.success(msg)
                         else:
                             st.error(msg)
-
     st.stop()
 
 
 # ==========================================
-# 4. BARRA LATERAL (MENU E NAVEGAÇÃO)
+# 3. INTERFACE E MENU CATEGORIZADO
 # ==========================================
-with st.sidebar:
-    logo_menu = db.obter_logo()
-    if logo_menu:
-        st.image(logo_menu, width=150)
+usuario_atual_nome = st.session_state.get("usuario_nome", "Usuário")
+usuario_atual_email = st.session_state.get("usuario_email", "")
+usuario_atual_perfil = st.session_state.get("usuario_perfil", "Administrador")
 
-    st.markdown(f"### Olá, **{st.session_state['usuario_nome']}**")
-    st.caption(f"Cargo / Nível: **{st.session_state['usuario_perfil']}**")
-    st.markdown("---")
-
-    opcoes_menu = [
-        "🛏️ Hospedagem e Reservas",
-        "📁 Cadastros",
-        "💰 Financeiro e Vendas",
-        "🛠️ Manutenção",
-        "🎉 Eventos",
-        "👥 Gestão de Usuários"
+categorias_menu = {
+    "📌 OPERAÇÃO": [
+        "🏠 Painel Geral (Dashboard)",
+        "📊 Mapa de Ocupação & Leitos",
+        "🔔 Central de Alertas",
+        "🧹 Painel de Limpeza",
+        "🔧 Gestão de Manutenção"
+    ],
+    "🏨 HOSPEDAGEM & BALCÃO": [
+        "📅 Nova Reserva & Edição",
+        "📋 Check-out & Histórico",
+        "🛒 Loja & Conveniência (PDV)",
+        "🎉 Eventos & Experiências"
+    ],
+    "📁 CADASTROS": [
+        "👤 Cadastro de Hóspedes",
+        "🏢 Empresas Parceiras",
+        "🚪 Quartos & Alas",
+        "🛏️ Camas & Preços por Leito",
+        "🧑‍💼 Equipe (Colaboradores)",
+        "🛠️ Prestadores de Serviços"
+    ],
+    "⚙️ ADMINISTRAÇÃO & GESTÃO": [
+        "👥 Gestão de Usuários & Acessos",
+        "🏛️ Integração Fiscal (NFS-e)",
+        "🛡️ Governança LGPD & Termos",
+        "❓ Central de Ajuda & Manual",
+        "📈 Relatórios & Faturamento",
+        "⚙️ Configurações & Temas"
     ]
+}
 
-    menu_selecionado = st.radio("Navegação:", opcoes_menu)
+menu_plano = []
+for cat_nome, itens in categorias_menu.items():
+    for item in itens:
+        if usuario_atual_perfil == "Administrador":
+            menu_plano.append(item)
+        elif usuario_atual_perfil == "Recepção":
+            if item not in [
+                "🚪 Quartos & Alas",
+                "🛏️ Camas & Preços por Leito",
+                "🧑‍💼 Equipe (Colaboradores)",
+                "🛠️ Prestadores de Serviços",
+                "👥 Gestão de Usuários & Acessos",
+                "🏛️ Integração Fiscal (NFS-e)",
+                "📈 Relatórios & Faturamento",
+                "⚙️ Configurações & Temas"
+            ]:
+                menu_plano.append(item)
+        else:  # Perfil Limpeza
+            if item in ["🧹 Painel de Limpeza", "🔧 Gestão de Manutenção", "📊 Mapa de Ocupação & Leitos", "❓ Central de Ajuda & Manual"]:
+                menu_plano.append(item)
 
-    st.markdown("---")
+if "redirecionar_menu" in st.session_state:
+    destino = st.session_state.pop("redirecionar_menu")
+    for m in menu_plano:
+        if destino.lower() in m.lower() or m.lower() in destino.lower():
+            st.session_state["menu_selecionado"] = m
+            break
 
-    if st.button("🚪 Sair do Sistema", use_container_width=True):
-        if st.session_state.get("usuario_email"):
-            db.revogar_token_sessao(st.session_state["usuario_email"])
-        try:
-            db.supabase.auth.sign_out()
-        except Exception:
-            pass
-        st.query_params.clear()
-        st.session_state.clear()
-        st.rerun()
+if "menu_selecionado" not in st.session_state or st.session_state["menu_selecionado"] not in menu_plano:
+    st.session_state["menu_selecionado"] = menu_plano[0]
 
+# Barra Lateral: Identificação do Hostel e Usuário
+logo_atual = db.obter_logo()
+if logo_atual:
+    st.sidebar.image(logo_atual, use_container_width=True)
+
+st.sidebar.markdown(
+    f"""
+    <div class="user-profile-badge">
+        <div style="font-weight: 700; font-size: 0.95rem;">👤 {usuario_atual_nome}</div>
+        <div style="font-size: 0.8rem; opacity: 0.8;">{usuario_atual_email}</div>
+        <div style="margin-top: 4px; display: inline-block; background-color: {'#334155' if tema_atual == 'Escuro' else '#e2e8f0'}; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+            Perfil: {usuario_atual_perfil}
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Na barra lateral, substitua o bloco do botão "Sair do Sistema":
+if st.sidebar.button("🚪 Sair do Sistema (Logout)", use_container_width=True):
+    if st.session_state.get("usuario_email"):
+        db.revogar_token_sessao(st.session_state["usuario_email"])
+    try:
+        db.supabase.auth.sign_out()
+    except Exception:
+        pass
+    st.query_params.clear()
+    st.session_state.clear()
+    st.rerun()
+
+st.sidebar.markdown("---")
+
+# ----------------------------------------------------
+# 🔍 BUSCA RÁPIDA GLOBAL NO MENU LATERAL
+# ----------------------------------------------------
+with st.sidebar.expander("🔎 Busca Rápida no Sistema"):
+    busca_query = st.text_input("Buscar Hóspede, Localizador ou Quarto:", placeholder="Digite 2+ caracteres").strip()
+    if busca_query:
+        resultados_busca = db.busca_rapida_global(busca_query)
+        achou_algo = False
+
+        if resultados_busca["reservas"]:
+            achou_algo = True
+            st.markdown("##### 📅 Reservas Ativas:")
+            for rb in resultados_busca["reservas"]:
+                h_n = rb.get("hospedes", {}).get("nome", "Hóspede")
+                loc = rb.get("codigo_localizador", "S/CÓD")
+                if st.button(f"[{loc}] {h_n}", key=f"b_res_{rb['id']}", use_container_width=True):
+                    st.session_state["redirecionar_menu"] = "📋 Check-out & Histórico"
+                    st.session_state["destaque_reserva_id"] = rb["id"]
+                    st.rerun()
+
+        if resultados_busca["hospedes"]:
+            achou_algo = True
+            st.markdown("##### 👤 Hóspedes:")
+            for hb in resultados_busca["hospedes"]:
+                tel_limpo = "".join(filter(str.isdigit, str(hb.get("telefone", ""))))
+                col_hb1, col_hb2 = st.columns([2, 1])
+                with col_hb1:
+                    st.write(f"• **{hb['nome']}**")
+                with col_hb2:
+                    if tel_limpo:
+                        st.link_button("📲 WPP", f"https://wa.me/55{tel_limpo}")
+
+        if resultados_busca["manutencoes"]:
+            achou_algo = True
+            st.markdown("##### 🔧 Manutenções:")
+            for mb in resultados_busca["manutencoes"]:
+                st.write(f"• **{mb['titulo']}** ({mb.get('status')})")
+
+        if not achou_algo:
+            st.caption("Nenhum resultado encontrado.")
+
+st.sidebar.markdown("---")
+
+# MENU PRINCIPAL LATERAL
+st.sidebar.markdown("### 🧭 Menu do Sistema")
+escolha = st.sidebar.selectbox("Navegue pelas funcionalidades:", menu_plano, key="menu_selecionado")
+st.sidebar.markdown("---")
+
+# Avisos na Barra Lateral
+dados_alertas = db.obter_resumo_alertas()
+tot_overstay = len(dados_alertas["overstay"])
+tot_checkout = len(dados_alertas["checkout_hoje"])
+tot_devedores = len(dados_alertas["inadimplencia_vendas"]) + len(dados_alertas["inadimplencia_eventos"])
+tot_limpeza = len(dados_alertas["limpeza_pendente"])
+tot_manut = len(dados_alertas.get("manutencoes_urgentes", []))
+
+with st.sidebar.container():
+    st.markdown("### 🔔 Avisos Operacionais")
+    if tot_overstay > 0:
+        st.markdown(f"<div class='alerta-badge-card' style='background-color:#ffe3e3; color:#c92a2a; border-left:4px solid #f03e3e;'>🚨 <b>{tot_overstay}</b> estadia(s) vencida(s)!</div>", unsafe_allow_html=True)
+        if st.button("👉 Resolver Overstay", key="btn_nav_overstay", use_container_width=True):
+            st.session_state["redirecionar_menu"] = "🔔 Central de Alertas"
+            st.rerun()
+
+    if tot_checkout > 0:
+        st.markdown(f"<div class='alerta-badge-card' style='background-color:#fff4e6; color:#d9480f; border-left:4px solid #fd7e14;'>⏰ <b>{tot_checkout}</b> saída(s) hoje (11h)</div>", unsafe_allow_html=True)
+        if st.button("👉 Ir p/ Check-outs", key="btn_nav_checkout", use_container_width=True):
+            st.session_state["redirecionar_menu"] = "📋 Check-out & Histórico"
+            st.rerun()
+
+    if tot_devedores > 0 and usuario_atual_perfil in ["Administrador", "Recepção"]:
+        st.markdown(f"<div class='alerta-badge-card' style='background-color:#fff9db; color:#e67700; border-left:4px solid #fcc419;'>💸 <b>{tot_devedores}</b> conta(s) pendente(s)</div>", unsafe_allow_html=True)
+        if st.button("👉 Cobrar Inadimplentes", key="btn_nav_devedores", use_container_width=True):
+            st.session_state["redirecionar_menu"] = "🔔 Central de Alertas"
+            st.rerun()
+
+    if tot_limpeza > 0:
+        st.markdown(f"<div class='alerta-badge-card' style='background-color:#f1f3f5; color:#495057; border-left:4px solid #adb5bd;'>🧹 <b>{tot_limpeza}</b> leito(s) para limpeza</div>", unsafe_allow_html=True)
+        if st.button("👉 Ir p/ Limpeza", key="btn_nav_limpeza", use_container_width=True):
+            st.session_state["redirecionar_menu"] = "🧹 Painel de Limpeza"
+            st.rerun()
+
+    if tot_manut > 0:
+        st.markdown(f"<div class='alerta-badge-card' style='background-color:#fef2f2; color:#991b1b; border-left:4px solid #ef4444;'>🔧 <b>{tot_manut}</b> manutenção(ões) urgente(s)!</div>", unsafe_allow_html=True)
+        if st.button("👉 Resolver Manutenções", key="btn_nav_manut", use_container_width=True):
+            st.session_state["redirecionar_menu"] = "🔧 Gestão de Manutenção"
+            st.rerun()
+
+    if tot_overstay == 0 and tot_checkout == 0 and tot_devedores == 0 and tot_limpeza == 0 and tot_manut == 0:
+        st.markdown("<div class='alerta-badge-card' style='background-color:#ebfbee; color:#2b8a3e; border-left:4px solid #40c057;'>✅ Nenhuma pendência no momento</div>", unsafe_allow_html=True)
+
+indice_atual = menu_plano.index(escolha)
+renderizar_cabecalho(escolha, indice_atual)
 
 # ==========================================
-# 5. ROTEAMENTO DAS TELAS DO SISTEMA
+# 4. ROTEAMENTO DE MÓDULOS
 # ==========================================
+if escolha == "🏠 Painel Geral (Dashboard)":
+    dashboard.renderizar_dashboard(usuario_atual_perfil)
+elif escolha == "📊 Mapa de Ocupação & Leitos":
+    hospedagem.renderizar_mapa(usuario_atual_perfil)
+elif escolha == "🔔 Central de Alertas":
+    operacoes.renderizar_alertas(usuario_atual_perfil)
+elif escolha == "🧹 Painel de Limpeza":
+    hospedagem.renderizar_limpeza()
+elif escolha == "🔧 Gestão de Manutenção":
+    manutencao.renderizar_manutencao(usuario_atual_perfil)
 
-# 1. Hospedagem / Mapa de Ocupação / Reservas
-if menu_selecionado == "🛏️ Hospedagem e Reservas":
-    executar_funcao_modulo(
-        mod_hosp, 
-        ["renderizar_hospedagem", "renderizar_mapa", "renderizar_reservas", "renderizar_tela"]
-    )
+elif escolha == "📅 Nova Reserva & Edição":
+    hospedagem.renderizar_reservas()
+elif escolha == "📋 Check-out & Histórico":
+    hospedagem.renderizar_checkout()
+elif escolha == "🛒 Loja & Conveniência (PDV)":
+    operacoes.renderizar_pdv(usuario_atual_email, usuario_atual_nome)
+elif escolha == "🎉 Eventos & Experiências":
+    operacoes.renderizar_eventos()
 
-# 2. Cadastros Gerais (Hóspedes, Quartos, Colaboradores)
-elif menu_selecionado == "📁 Cadastros":
-    st.markdown("## 📁 Central de Cadastros")
-    sub_cadastros = st.radio(
-        "Selecione o que deseja gerenciar:",
-        ["Hóspedes", "Quartos e Camas", "Equipe (Colaboradores)"],
-        horizontal=True
-    )
-    st.markdown("---")
+elif escolha == "👤 Cadastro de Hóspedes":
+    cadastros.renderizar_hospedes()
+elif escolha == "🏢 Empresas Parceiras":
+    cadastros.renderizar_empresas()
+elif escolha == "🚪 Quartos & Alas":
+    cadastros.renderizar_quartos()
+elif escolha == "🛏️ Camas & Preços por Leito":
+    cadastros.renderizar_camas()
+elif escolha == "🧑‍💼 Equipe (Colaboradores)":
+    cadastros.renderizar_colaboradores()
+elif escolha == "🛠️ Prestadores de Serviços":
+    cadastros.renderizar_prestadores()
 
-    if sub_cadastros == "Hóspedes":
-        renderizar_hospedes()
-    elif sub_cadastros == "Quartos e Camas":
-        renderizar_quartos()
-    elif sub_cadastros == "Equipe (Colaboradores)":
-        renderizar_colaboradores()
-
-# 3. Financeiro e Vendas
-elif menu_selecionado == "💰 Financeiro e Vendas":
-    if mod_fin:
-        executar_funcao_modulo(
-            mod_fin, 
-            ["renderizar_financeiro", "renderizar_vendas", "renderizar_caixa"]
-        )
-    else:
-        st.info("Módulo financeiro não localizado.")
-
-# 4. Manutenção
-elif menu_selecionado == "🛠️ Manutenção":
-    if mod_manut:
-        executar_funcao_modulo(
-            mod_manut, 
-            ["renderizar_manutencao", "renderizar_manutencoes"]
-        )
-    else:
-        st.info("Módulo de manutenção não localizado.")
-
-# 5. Eventos
-elif menu_selecionado == "🎉 Eventos":
-    if mod_eventos:
-        executar_funcao_modulo(
-            mod_eventos, 
-            ["renderizar_eventos", "renderizar_evento"]
-        )
-    else:
-        st.info("Módulo de eventos não localizado.")
-
-# 6. Gestão de Usuários
-elif menu_selecionado == "👥 Gestão de Usuários":
-    if st.session_state["usuario_perfil"] not in ["Administrador", "Gerente"]:
-        st.warning("🔒 Acesso restrito. Somente administradores e gerentes podem gerenciar contas de usuários.")
-    else:
-        renderizar_gestao_usuarios()
+elif escolha == "👥 Gestão de Usuários & Acessos":
+    gestao.renderizar_gestao_acessos(usuario_atual_email, usuario_atual_nome)
+elif escolha == "🏛️ Integração Fiscal (NFS-e)":
+    fiscal.renderizar_fiscal(usuario_atual_perfil)
+elif escolha == "🛡️ Governança LGPD & Termos":
+    ajuda_lgpd.renderizar_ajuda_lgpd(usuario_atual_perfil)
+elif escolha == "❓ Central de Ajuda & Manual":
+    ajuda_lgpd.renderizar_ajuda_lgpd(usuario_atual_perfil)
+elif escolha == "📈 Relatórios & Faturamento":
+    gestao.renderizar_relatorios()
+elif escolha == "⚙️ Configurações & Temas":
+    configuracoes.renderizar_configuracoes(usuario_atual_perfil)

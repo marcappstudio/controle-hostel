@@ -193,7 +193,6 @@ def buscar_manutencoes(status_filtro=None, ordem_data=True):
         return []
 
 def busca_rapida_global(termo: str):
-    """Busca unificada em hóspedes, reservas ativas, quartos e manutenções."""
     if not termo or len(termo.strip()) < 2:
         return {"hospedes": [], "reservas": [], "quartos": [], "manutencoes": []}
     
@@ -201,13 +200,11 @@ def busca_rapida_global(termo: str):
     resultados = {"hospedes": [], "reservas": [], "quartos": [], "manutencoes": []}
 
     try:
-        # Hóspedes
         res_h = supabase.table("hospedes").select("id, nome, telefone, email, documento, cpf").execute()
         for h in res_h.data or []:
             if t in str(h.get("nome", "")).lower() or t in str(h.get("telefone", "")) or t in str(h.get("documento", "")).lower():
                 resultados["hospedes"].append(h)
 
-        # Reservas Ativas
         reservas = buscar_reservas_completas(status_filtro="Ativa")
         for r in reservas:
             cod = str(r.get("codigo_localizador", "")).lower()
@@ -215,13 +212,11 @@ def busca_rapida_global(termo: str):
             if t in cod or t in h_nome:
                 resultados["reservas"].append(r)
 
-        # Quartos
         res_q = supabase.table("quartos").select("*").execute()
         for q in res_q.data or []:
             if t in str(q.get("nome", "")).lower() or t in str(q.get("ala", "")).lower():
                 resultados["quartos"].append(q)
 
-        # Manutenções
         manut = buscar_manutencoes()
         for m in manut:
             if t in str(m.get("titulo", "")).lower() or t in str(m.get("local_detalhe", "")).lower():
@@ -274,18 +269,144 @@ def obter_resumo_alertas():
 
 
 # ==========================================
-# 6. AUTENTICAÇÃO, HORÁRIOS E TOKENS PERSISTENTES
+# 6. AUTENTICAÇÃO, PERFIS E SESSÃO (RESTAURADO)
+# ==========================================
+def solicitar_recuperacao_senha(email: str):
+    try:
+        supabase.auth.reset_password_for_email(email.strip())
+        return True, "E-mail de recuperação enviado com sucesso! Verifique sua caixa de entrada."
+    except Exception as e:
+        return False, f"Falha ao enviar recuperação: {e}"
+
+def salvar_perfil_usuario(email: str, nome: str, perfil: str, ativo: bool = True):
+    email = email.lower().strip()
+    status_str = "Ativo" if ativo else "Suspenso"
+    try:
+        res = supabase.table("usuarios_sistema").select("id").eq("email", email).execute()
+        if res.data and len(res.data) > 0:
+            supabase.table("usuarios_sistema").update({"nome": nome, "perfil": perfil, "status": status_str}).eq("email", email).execute()
+        else:
+            supabase.table("usuarios_sistema").insert({"email": email, "nome": nome, "perfil": perfil, "status": status_str}).execute()
+        return True
+    except Exception:
+        try:
+            chave_usuario = f"usr_perfil_{email}"
+            dados_str = json.dumps({"nome": nome, "perfil": perfil, "status": status_str})
+            res_c = supabase.table("configuracoes").select("chave").eq("chave", chave_usuario).execute()
+            if res_c.data and len(res_c.data) > 0:
+                supabase.table("configuracoes").update({"valor": dados_str}).eq("chave", chave_usuario).execute()
+            else:
+                supabase.table("configuracoes").insert({"chave": chave_usuario, "valor": dados_str}).execute()
+            return True
+        except Exception:
+            return False
+
+def obter_perfil_usuario(email: str, auth_user=None):
+    """
+    Verifica na ordem:
+    1. Tabela usuarios_sistema
+    2. Tabela configuracoes (usr_perfil_)
+    3. Tabela colaboradores (se tiver perfil/cargo específico restrito)
+    4. Padrão seguro: Administrador (evita rebaixar o dono do sistema)
+    """
+    email = email.lower().strip()
+    
+    # 1. Busca em usuarios_sistema
+    try:
+        res = supabase.table("usuarios_sistema").select("*").eq("email", email).execute()
+        if res.data and len(res.data) > 0:
+            row = res.data[0]
+            if row.get("status") == "Suspenso":
+                return "Suspenso", row.get("nome", email)
+            return row.get("perfil", "Administrador"), row.get("nome", email)
+    except Exception:
+        pass
+    
+    # 2. Busca em configuracoes
+    try:
+        chave_usuario = f"usr_perfil_{email}"
+        res_c = supabase.table("configuracoes").select("valor").eq("chave", chave_usuario).execute()
+        if res_c.data and len(res_c.data) > 0:
+            dados = json.loads(res_c.data[0]["valor"])
+            if dados.get("status") == "Suspenso":
+                return "Suspenso", dados.get("nome", email)
+            return dados.get("perfil", "Administrador"), dados.get("nome", email)
+    except Exception:
+        pass
+
+    # 3. Busca em colaboradores (apenas se cadastrado lá com restrição)
+    try:
+        res_col = supabase.table("colaboradores").select("*").eq("email", email).execute()
+        if res_col.data and len(res_col.data) > 0:
+            col = res_col.data[0]
+            if col.get("status") in ["Suspenso", "Inativo"]:
+                return "Suspenso", col.get("nome", email)
+            cargo = col.get("cargo", "Administrador")
+            if cargo in ["Gerente", "Administrador"]:
+                return "Administrador", col.get("nome", email)
+            return cargo, col.get("nome", email)
+    except Exception:
+        pass
+
+    # Padrão original: Administrador
+    return "Administrador", email
+
+def listar_todos_usuarios():
+    try:
+        res = supabase.table("usuarios_sistema").select("*").order("email").execute()
+        if res.data:
+            return res.data
+    except Exception:
+        pass
+    
+    lista = []
+    try:
+        res_c = supabase.table("configuracoes").select("*").like("chave", "usr_perfil_%").execute()
+        for item in res_c.data or []:
+            email = item["chave"].replace("usr_perfil_", "")
+            dados = json.loads(item["valor"])
+            lista.append({
+                "email": email, 
+                "nome": dados.get("nome", email), 
+                "perfil": dados.get("perfil", "Administrador"),
+                "status": dados.get("status", "Ativo")
+            })
+    except Exception:
+        pass
+    return lista
+
+def excluir_usuario_sistema(email: str):
+    """Exclui o usuário de usuarios_sistema, configuracoes e colaboradores."""
+    email = email.lower().strip()
+    sucesso = False
+    try:
+        supabase.table("usuarios_sistema").delete().eq("email", email).execute()
+        sucesso = True
+    except Exception:
+        pass
+    try:
+        chave_usuario = f"usr_perfil_{email}"
+        supabase.table("configuracoes").delete().eq("chave", chave_usuario).execute()
+        sucesso = True
+    except Exception:
+        pass
+    try:
+        supabase.table("colaboradores").delete().eq("email", email).execute()
+        sucesso = True
+    except Exception:
+        pass
+    return sucesso
+
+
+# ==========================================
+# 7. HORÁRIOS DE TURNO E SESSÃO PERSISTENTE
 # ==========================================
 def obter_horario_brasilia():
     fuso = pytz.timezone("America/Sao_Paulo")
     return datetime.now(fuso)
 
 def validar_horario_acesso(email_usuario, perfil_usuario):
-    """
-    Retorna (autorizado: bool, mensagem: str).
-    Administradores sempre têm acesso irrestrito (24h).
-    """
-    if perfil_usuario == "Administrador":
+    if perfil_usuario in ["Administrador", "Gerente"]:
         return True, ""
 
     try:
@@ -307,90 +428,67 @@ def validar_horario_acesso(email_usuario, perfil_usuario):
         if h_inicio <= h_fim:
             permitido = h_inicio <= agora <= h_fim
         else:
-            # Turnos noturnos que cruzam meia-noite (ex: 22h às 06h)
             permitido = agora >= h_inicio or agora <= h_fim
 
         if not permitido:
             return False, f"Acesso permitido apenas entre {h_inicio.strftime('%H:%M')} e {h_fim.strftime('%H:%M')}."
 
         return True, ""
-    except Exception as e:
-        print(f"Erro ao checar janela de horário: {e}")
+    except Exception:
         return True, ""
 
 def gerar_token_sessao(email_usuario):
-    """Gera um token criptográfico único para manter o usuário conectado."""
     token = secrets.token_urlsafe(32)
+    email = email_usuario.lower().strip()
     try:
-        supabase.table("colaboradores").update({"session_token": token}).eq("email", email_usuario).execute()
+        # Salva o token em configuracoes para funcionar tanto para Admin quanto Colaboradores
+        chave_tok = f"sess_tok_{token}"
+        dados_tok = json.dumps({"email": email, "criado_em": str(datetime.now())})
+        supabase.table("configuracoes").insert({"chave": chave_tok, "valor": dados_tok}).execute()
         return token
     except Exception:
-        return None
+        try:
+            supabase.table("colaboradores").update({"session_token": token}).eq("email", email).execute()
+            return token
+        except Exception:
+            return None
 
 def validar_token_sessao(token):
-    """Verifica se o token pertence a um colaborador ativo."""
     if not token:
         return None
+    # 1. Verifica na tabela configuracoes (suporta Administradores e qualquer usuário)
+    try:
+        chave_tok = f"sess_tok_{token}"
+        res_c = supabase.table("configuracoes").select("valor").eq("chave", chave_tok).execute()
+        if res_c.data and len(res_c.data) > 0:
+            dados_tok = json.loads(res_c.data[0]["valor"])
+            email = dados_tok.get("email")
+            if email:
+                perfil, nome = obter_perfil_usuario(email)
+                if perfil != "Suspenso":
+                    return {"email": email, "nome": nome, "perfil": perfil}
+    except Exception:
+        pass
+
+    # 2. Fallback na tabela colaboradores
     try:
         res = supabase.table("colaboradores").select("email, nome, cargo, status").eq("session_token", token).execute()
         if res.data and len(res.data) > 0:
-            user_data = res.data[0]
-            if user_data.get("status") in ["Suspenso", "Inativo"]:
-                return None
-            return {
-                "email": user_data.get("email"),
-                "nome": user_data.get("nome"),
-                "perfil": user_data.get("cargo", "Recepção")
-            }
-        return None
+            u = res.data[0]
+            if u.get("status") not in ["Suspenso", "Inativo"]:
+                perfil, nome = obter_perfil_usuario(u["email"])
+                return {"email": u["email"], "nome": nome, "perfil": perfil}
     except Exception:
-        return None
+        pass
+    return None
 
-def revogar_token_sessao(email_usuario):
-    """Limpa o token ao deslogar do sistema."""
+def revogar_token_sessao(email_usuario, token=None):
+    if token:
+        try:
+            supabase.table("configuracoes").delete().eq("chave", f"sess_tok_{token}").execute()
+        except Exception:
+            pass
     try:
         supabase.table("colaboradores").update({"session_token": None}).eq("email", email_usuario).execute()
     except Exception:
         pass
-
-def solicitar_recuperacao_senha(email: str):
-    try:
-        supabase.auth.reset_password_for_email(email.strip())
-        return True, "E-mail de recuperação enviado com sucesso! Verifique sua caixa de entrada."
-    except Exception as e:
-        return False, f"Falha ao enviar recuperação: {e}"
-
-def salvar_perfil_usuario(email: str, nome: str, perfil: str, ativo: bool = True):
-    email = email.lower().strip()
-    status_str = "Ativo" if ativo else "Suspenso"
-    try:
-        res = supabase.table("colaboradores").select("id").eq("email", email).execute()
-        if res.data and len(res.data) > 0:
-            supabase.table("colaboradores").update({"nome": nome, "cargo": perfil, "status": status_str}).eq("email", email).execute()
-        else:
-            supabase.table("colaboradores").insert({"email": email, "nome": nome, "cargo": perfil, "status": status_str}).execute()
-        return True
-    except Exception:
-        return False
-
-def obter_perfil_usuario(email: str, auth_user=None):
-    email = email.lower().strip()
-    try:
-        res = supabase.table("colaboradores").select("*").eq("email", email).execute()
-        if res.data and len(res.data) > 0:
-            row = res.data[0]
-            if row.get("status") in ["Suspenso", "Inativo"]:
-                return "Suspenso", row.get("nome", email)
-            return row.get("cargo", "Recepção"), row.get("nome", email)
-    except Exception:
-        pass
-    return "Recepção", email.split("@")[0].capitalize()
-
-def listar_todos_usuarios():
-    try:
-        res = supabase.table("colaboradores").select("*").order("nome").execute()
-        if res.data:
-            return res.data
-    except Exception:
-        pass
-    return []
