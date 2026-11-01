@@ -163,11 +163,8 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
         "➕ Cadastrar Novo Usuário", "👥 Gerenciar / Excluir Usuários", "🧪 Carga de Testes & Limpeza"
     ])
 
-    # =========================================================================
-    # ABA 1: CRIAR NOVA CONTA DE ACESSO
-    # =========================================================================
     with aba_novo:
-        st.subheader("➕ Criar Conta para Novo Colaborador")
+        st.subheader("➕ Criar Conta de Acesso ao Sistema")
         st.caption("Apenas administradores logados podem criar novos operadores de sistema.")
 
         with st.form("form_cad_usuario", clear_on_submit=True):
@@ -175,8 +172,7 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
             u_email = st.text_input("E-mail Institucional de Acesso *").strip().lower()
             u_senha = st.text_input("Senha Inicial (mínimo 6 dígitos) *", type="password")
             
-            # Atualizado o seletor de perfil com a nova opção "Manutenção" e "Voluntário"
-            u_perfil = st.selectbox("Perfil de Acesso / Cargo:", ["Recepção", "Limpeza", "Manutenção", "Voluntário", "Administrador"])
+            u_perfil = st.selectbox("Perfil de Acesso ao Sistema:", ["Recepção", "Limpeza", "Manutenção", "Administrador"])
 
             st.markdown("---")
             st.markdown("##### ⏰ Janela de Acesso Permitido")
@@ -203,16 +199,13 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                     st.error("Se o acesso é restrito, selecione ao menos um dia da semana.")
                 else:
                     try:
-                        # 1. Registra no Supabase Auth
                         db.supabase.auth.sign_up({
                             "email": u_email, 
                             "password": u_senha, 
                             "options": {"data": {"nome": u_nome, "perfil": u_perfil}}
                         })
-                        # 2. Salva perfil de acesso no sistema
                         db.salvar_perfil_usuario(u_email, u_nome, u_perfil, ativo=True)
 
-                        # 3. Sincroniza na tabela colaboradores com os horários de turno e dias
                         try:
                             res_col = db.supabase.table("colaboradores").select("id").eq("email", u_email).execute()
                             dados_col = {
@@ -237,14 +230,10 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                     except Exception as e:
                         st.error(f"Erro ao cadastrar usuário: {e}")
 
-    # =========================================================================
-    # ABA 2: GERENCIAR, EDITAR E EXCLUIR USUÁRIOS (COM DROPDOWN)
-    # =========================================================================
     with aba_lista:
         st.subheader("👥 Gestão de Usuários, Permissões e Exclusão")
         st.caption("Selecione um usuário na lista suspensa abaixo para editar permissões, definir dias/horários ou excluir a conta.")
 
-        # Unifica usuários de usuarios_sistema/configuracoes e colaboradores com e-mail
         usuarios_base = db.listar_todos_usuarios() or []
         mapa_usuarios = {}
 
@@ -315,15 +304,13 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                     with col_u1:
                         edit_nome = st.text_input("Nome Completo:", value=u_nome_atual)
                         
-                        # Atualizado lista de perfis na edição
-                        perfis_lista = ["Recepção", "Limpeza", "Manutenção", "Voluntário", "Administrador"]
+                        perfis_lista = ["Recepção", "Limpeza", "Manutenção", "Administrador"]
                         idx_p = perfis_lista.index(u_perf_atual) if u_perf_atual in perfis_lista else 0
-                        edit_perfil = st.selectbox("Perfil de Acesso:", perfis_lista, index=idx_p)
+                        edit_perfil = st.selectbox("Perfil de Acesso no Sistema:", perfis_lista, index=idx_p)
                     with col_u2:
                         tornar_suspenso = st.checkbox("🚫 Suspender / Bloquear Acesso deste Usuário", value=(u_status_atual == "Suspenso"))
                         edit_restringir = st.checkbox("⏰ Restringir acesso por dias/horários?", value=bool(usr_sel.get("restringir_horario", False)))
 
-                    # Multiselect de dias na edição
                     dias_salvos = usr_sel.get("dias_permitidos")
                     if not dias_salvos:
                         dias_salvos = DIAS_SEMANA_TODOS
@@ -334,7 +321,6 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                         default=dias_salvos
                     )
 
-                    # Horários de turno
                     h_ini_v = time(8, 0)
                     if usr_sel.get("horario_inicio"):
                         try:
@@ -385,7 +371,6 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                             db.notificar_sucesso(f"Acesso de {edit_nome} atualizado com sucesso!")
                             st.rerun()
 
-                # Zona de Exclusão Definitiva
                 st.markdown("---")
                 with st.expander("🗑️ Zona de Perigo: Excluir este Usuário Permanentemente", expanded=False):
                     if u_mail.lower() == str(usuario_email or "").strip().lower():
@@ -403,9 +388,6 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                                 db.notificar_sucesso(f"Usuário {u_nome_atual} excluído permanentemente!")
                                 st.rerun()
 
-    # =========================================================================
-    # ABA 3: CARGA DE TESTES E LIMPEZA OPERACIONAL
-    # =========================================================================
     with aba_seeder:
         st.subheader("🧪 Carga de Testes e Limpeza Operacional")
         col_s1, col_s2 = st.columns(2)

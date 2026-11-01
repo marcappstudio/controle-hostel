@@ -26,9 +26,6 @@ def calcular_idade(data_nasc):
 def renderizar_hospedes():
     aba_cad, aba_cons = st.tabs(["Cadastrar Hóspede", "Consultar / Editar / Excluir"])
 
-    # =========================================================================
-    # ABA 1: NOVO CADASTRO COM CONFORMIDADE ECA / FNRH
-    # =========================================================================
     with aba_cad:
         st.subheader("Novo Cadastro de Hóspede")
 
@@ -48,7 +45,6 @@ def renderizar_hospedes():
         with col_p3:
             genero = st.selectbox("Gênero:", ["Não informado", "Feminino", "Masculino", "Outro"], key="cad_h_gen")
 
-        # Trava legal para menores de 18 anos (Art. 82 do ECA)
         idade_calculada = calcular_idade(data_nasc)
         responsavel_menor = None
         is_menor = (idade_calculada is not None and idade_calculada < 18)
@@ -161,9 +157,6 @@ def renderizar_hospedes():
                 db.notificar_sucesso(f"Hóspede {nome} cadastrado com sucesso!")
                 st.rerun()
 
-    # =========================================================================
-    # ABA 2: CONSULTA, EDIÇÃO E EXCLUSÃO
-    # =========================================================================
     with aba_cons:
         try:
             res_h = db.supabase.table("hospedes").select("*").execute()
@@ -613,8 +606,9 @@ def renderizar_colaboradores():
             c_cpf = st.text_input("CPF") if c_nac == "Brasileira" else ""
             c_pass = st.text_input("Passaporte / RNE") if c_nac != "Brasileira" else ""
             
-            # Adicionado "Manutenção" e "Voluntário"
-            c_cargo = st.selectbox("Função / Cargo / Vínculo", ["Limpeza", "Recepção", "Voluntário", "Manutenção", "Gerente", "Outros"])
+            st.markdown("##### 📄 Informações de Contrato e Função")
+            c_vinculo = st.radio("Tipo de Vínculo", ["Funcionário Formal", "Voluntário"], horizontal=True)
+            c_cargo = st.selectbox("Função Principal no Hostel", ["Limpeza", "Recepção", "Manutenção", "Gerente", "Outros"])
             c_tel = st.text_input("Telefone de Contato")
 
             st.markdown("---")
@@ -651,6 +645,7 @@ def renderizar_colaboradores():
                             "nacionalidade": c_nac,
                             "cpf": cpf_limpo,
                             "passaporte_rne": c_pass if c_pass else None,
+                            "vinculo": c_vinculo,
                             "cargo": c_cargo,
                             "telefone": c_tel,
                             "status": "Ativo",
@@ -693,10 +688,14 @@ def renderizar_colaboradores():
                     e_nome = st.text_input("Nome", value=colab.get("nome", ""))
                     e_email = st.text_input("E-mail de Acesso", value=colab.get("email") or "").strip().lower()
                     
-                    # Atualizado com "Manutenção" e "Voluntário"
-                    cargos_opcoes = ["Limpeza", "Recepção", "Voluntário", "Manutenção", "Gerente", "Outros"]
+                    st.markdown("##### 📄 Informações de Contrato e Função")
+                    v_opcoes = ["Funcionário Formal", "Voluntário"]
+                    idx_v = v_opcoes.index(colab.get("vinculo", "Funcionário Formal")) if colab.get("vinculo") in v_opcoes else 0
+                    e_vinculo = st.radio("Tipo de Vínculo", v_opcoes, index=idx_v, horizontal=True)
+
+                    cargos_opcoes = ["Limpeza", "Recepção", "Manutenção", "Gerente", "Outros"]
                     idx_cargo = cargos_opcoes.index(colab.get("cargo")) if colab.get("cargo") in cargos_opcoes else 0
-                    e_cargo = st.selectbox("Função / Cargo / Vínculo", cargos_opcoes, index=idx_cargo)
+                    e_cargo = st.selectbox("Função Principal", cargos_opcoes, index=idx_cargo)
                     
                     e_tel = st.text_input("Telefone / WhatsApp", value=colab.get("telefone") or "")
                     
@@ -752,6 +751,7 @@ def renderizar_colaboradores():
                                 db.supabase.table("colaboradores").update({
                                     "nome": e_nome,
                                     "email": e_email,
+                                    "vinculo": e_vinculo,
                                     "cargo": e_cargo,
                                     "telefone": e_tel,
                                     "status": e_status,
