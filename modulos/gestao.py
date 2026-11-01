@@ -6,6 +6,8 @@ import database as db
 from utils.formatadores import formatar_data_br, extrair_data
 from utils.exportadores import gerar_csv, gerar_pdf_tabela
 
+DIAS_SEMANA_TODOS = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+
 def renderizar_relatorios():
     aba_metricas, aba_exportacao = st.tabs(["📊 Painel Financeiro & Métricas", "📥 Exportação de Dados"])
 
@@ -172,11 +174,20 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
             u_nome = st.text_input("Nome Completo do Colaborador *")
             u_email = st.text_input("E-mail Institucional de Acesso *").strip().lower()
             u_senha = st.text_input("Senha Inicial (mínimo 6 dígitos) *", type="password")
-            u_perfil = st.selectbox("Perfil de Acesso:", ["Recepção", "Limpeza", "Administrador"])
+            
+            # Atualizado o seletor de perfil com a nova opção "Manutenção" e "Voluntário"
+            u_perfil = st.selectbox("Perfil de Acesso / Cargo:", ["Recepção", "Limpeza", "Manutenção", "Voluntário", "Administrador"])
 
             st.markdown("---")
             st.markdown("##### ⏰ Janela de Acesso Permitido")
-            u_restringir = st.checkbox("Restringir horário de login deste usuário?", value=False)
+            u_restringir = st.checkbox("Restringir acesso deste usuário por dias e horários?", value=False)
+            
+            u_dias = st.multiselect(
+                "Dias da semana permitidos para login:",
+                DIAS_SEMANA_TODOS,
+                default=DIAS_SEMANA_TODOS
+            )
+
             col_uh1, col_uh2 = st.columns(2)
             with col_uh1:
                 u_h_ini = st.time_input("Entrada Permitida", value=time(8, 0), step=1800)
@@ -188,6 +199,8 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                     st.error("Informe o nome e o e-mail do colaborador.")
                 elif len(u_senha) < 6:
                     st.error("A senha deve ter no mínimo 6 caracteres.")
+                elif u_restringir and not u_dias:
+                    st.error("Se o acesso é restrito, selecione ao menos um dia da semana.")
                 else:
                     try:
                         # 1. Registra no Supabase Auth
@@ -199,7 +212,7 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                         # 2. Salva perfil de acesso no sistema
                         db.salvar_perfil_usuario(u_email, u_nome, u_perfil, ativo=True)
 
-                        # 3. Sincroniza na tabela colaboradores com os horários de turno
+                        # 3. Sincroniza na tabela colaboradores com os horários de turno e dias
                         try:
                             res_col = db.supabase.table("colaboradores").select("id").eq("email", u_email).execute()
                             dados_col = {
@@ -208,6 +221,7 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                                 "cargo": u_perfil,
                                 "status": "Ativo",
                                 "restringir_horario": u_restringir,
+                                "dias_permitidos": u_dias if u_restringir else DIAS_SEMANA_TODOS,
                                 "horario_inicio": u_h_ini.strftime("%H:%M:%S"),
                                 "horario_fim": u_h_fim.strftime("%H:%M:%S")
                             }
@@ -228,7 +242,7 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
     # =========================================================================
     with aba_lista:
         st.subheader("👥 Gestão de Usuários, Permissões e Exclusão")
-        st.caption("Selecione um usuário na lista suspensa abaixo para editar permissões, definir horários ou excluir a conta.")
+        st.caption("Selecione um usuário na lista suspensa abaixo para editar permissões, definir dias/horários ou excluir a conta.")
 
         # Unifica usuários de usuarios_sistema/configuracoes e colaboradores com e-mail
         usuarios_base = db.listar_todos_usuarios() or []
@@ -243,6 +257,7 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                     "perfil": u.get("perfil") or "Recepção",
                     "status": u.get("status") or "Ativo",
                     "restringir_horario": False,
+                    "dias_permitidos": DIAS_SEMANA_TODOS,
                     "horario_inicio": "08:00:00",
                     "horario_fim": "17:00:00"
                 }
@@ -254,17 +269,19 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                 if mail_c:
                     if mail_c in mapa_usuarios:
                         mapa_usuarios[mail_c]["restringir_horario"] = bool(c.get("restringir_horario", False))
+                        mapa_usuarios[mail_c]["dias_permitidos"] = c.get("dias_permitidos") or DIAS_SEMANA_TODOS
                         mapa_usuarios[mail_c]["horario_inicio"] = c.get("horario_inicio") or "08:00:00"
                         mapa_usuarios[mail_c]["horario_fim"] = c.get("horario_fim") or "17:00:00"
                     else:
                         cargo_c = c.get("cargo", "Recepção")
-                        perfil_map = "Administrador" if cargo_c in ["Administrador", "Gerente"] else ("Limpeza" if cargo_c == "Limpeza" else "Recepção")
+                        perfil_map = "Administrador" if cargo_c in ["Administrador", "Gerente"] else ("Limpeza" if cargo_c == "Limpeza" else ("Manutenção" if cargo_c == "Manutenção" else "Recepção"))
                         mapa_usuarios[mail_c] = {
                             "email": mail_c,
                             "nome": c.get("nome") or mail_c,
                             "perfil": perfil_map,
                             "status": "Suspenso" if c.get("status") in ["Suspenso", "Inativo"] else "Ativo",
                             "restringir_horario": bool(c.get("restringir_horario", False)),
+                            "dias_permitidos": c.get("dias_permitidos") or DIAS_SEMANA_TODOS,
                             "horario_inicio": c.get("horario_inicio") or "08:00:00",
                             "horario_fim": c.get("horario_fim") or "17:00:00"
                         }
@@ -297,12 +314,25 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                     col_u1, col_u2 = st.columns(2)
                     with col_u1:
                         edit_nome = st.text_input("Nome Completo:", value=u_nome_atual)
-                        perfis_lista = ["Recepção", "Limpeza", "Administrador"]
+                        
+                        # Atualizado lista de perfis na edição
+                        perfis_lista = ["Recepção", "Limpeza", "Manutenção", "Voluntário", "Administrador"]
                         idx_p = perfis_lista.index(u_perf_atual) if u_perf_atual in perfis_lista else 0
                         edit_perfil = st.selectbox("Perfil de Acesso:", perfis_lista, index=idx_p)
                     with col_u2:
                         tornar_suspenso = st.checkbox("🚫 Suspender / Bloquear Acesso deste Usuário", value=(u_status_atual == "Suspenso"))
-                        edit_restringir = st.checkbox("⏰ Restringir horário de login?", value=bool(usr_sel.get("restringir_horario", False)))
+                        edit_restringir = st.checkbox("⏰ Restringir acesso por dias/horários?", value=bool(usr_sel.get("restringir_horario", False)))
+
+                    # Multiselect de dias na edição
+                    dias_salvos = usr_sel.get("dias_permitidos")
+                    if not dias_salvos:
+                        dias_salvos = DIAS_SEMANA_TODOS
+
+                    edit_dias = st.multiselect(
+                        "Dias da semana permitidos para login:",
+                        DIAS_SEMANA_TODOS,
+                        default=dias_salvos
+                    )
 
                     # Horários de turno
                     h_ini_v = time(8, 0)
@@ -326,30 +356,34 @@ def renderizar_gestao_acessos(usuario_email, usuario_nome):
                         edit_h_fim = st.time_input("Saída Permitida", value=h_fim_v, step=1800, key=f"u_fim_{u_mail}")
 
                     if st.form_submit_button("💾 Salvar Alterações do Usuário", type="primary", use_container_width=True):
-                        db.salvar_perfil_usuario(u_mail, edit_nome, edit_perfil, ativo=(not tornar_suspenso))
-                        try:
-                            res_col_check = db.supabase.table("colaboradores").select("id").eq("email", u_mail).execute()
-                            payload_col = {
-                                "nome": edit_nome,
-                                "cargo": edit_perfil,
-                                "status": "Inativo" if tornar_suspenso else "Ativo",
-                                "restringir_horario": edit_restringir,
-                                "horario_inicio": edit_h_ini.strftime("%H:%M:%S"),
-                                "horario_fim": edit_h_fim.strftime("%H:%M:%S")
-                            }
-                            if res_col_check.data and len(res_col_check.data) > 0:
-                                db.supabase.table("colaboradores").update(payload_col).eq("email", u_mail).execute()
-                            else:
-                                payload_col["email"] = u_mail
-                                db.supabase.table("colaboradores").insert(payload_col).execute()
-                        except Exception:
-                            pass
+                        if edit_restringir and not edit_dias:
+                            st.error("Se o acesso é restrito, você precisa selecionar ao menos um dia da semana.")
+                        else:
+                            db.salvar_perfil_usuario(u_mail, edit_nome, edit_perfil, ativo=(not tornar_suspenso))
+                            try:
+                                res_col_check = db.supabase.table("colaboradores").select("id").eq("email", u_mail).execute()
+                                payload_col = {
+                                    "nome": edit_nome,
+                                    "cargo": edit_perfil,
+                                    "status": "Inativo" if tornar_suspenso else "Ativo",
+                                    "restringir_horario": edit_restringir,
+                                    "dias_permitidos": edit_dias if edit_restringir else DIAS_SEMANA_TODOS,
+                                    "horario_inicio": edit_h_ini.strftime("%H:%M:%S"),
+                                    "horario_fim": edit_h_fim.strftime("%H:%M:%S")
+                                }
+                                if res_col_check.data and len(res_col_check.data) > 0:
+                                    db.supabase.table("colaboradores").update(payload_col).eq("email", u_mail).execute()
+                                else:
+                                    payload_col["email"] = u_mail
+                                    db.supabase.table("colaboradores").insert(payload_col).execute()
+                            except Exception:
+                                pass
 
-                        if tornar_suspenso:
-                            db.revogar_token_sessao(u_mail)
+                            if tornar_suspenso:
+                                db.revogar_token_sessao(u_mail)
 
-                        db.notificar_sucesso(f"Acesso de {edit_nome} atualizado com sucesso!")
-                        st.rerun()
+                            db.notificar_sucesso(f"Acesso de {edit_nome} atualizado com sucesso!")
+                            st.rerun()
 
                 # Zona de Exclusão Definitiva
                 st.markdown("---")

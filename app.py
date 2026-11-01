@@ -188,7 +188,7 @@ token_param = st.query_params.get("session")
 if not st.session_state["autenticado"] and token_param:
     dados_token = db.validar_token_sessao(token_param)
     if dados_token:
-        # Checa se o horário atual ainda permite o uso
+        # Checa se o horário atual e dia da semana ainda permitem o uso
         autorizado, msg_erro_horario = db.validar_horario_acesso(dados_token["email"], dados_token["perfil"])
         if autorizado:
             st.session_state["autenticado"] = True
@@ -197,7 +197,7 @@ if not st.session_state["autenticado"] and token_param:
             st.session_state["usuario_perfil"] = dados_token["perfil"]
         else:
             st.query_params.clear()
-            st.error(f"⛔ Turno encerrado: {msg_erro_horario}")
+            st.error(f"⛔ Acesso restrito: {msg_erro_horario}")
 
 # 2. Tela de Login se não estiver autenticado
 if not st.session_state["autenticado"]:
@@ -230,7 +230,7 @@ if not st.session_state["autenticado"]:
                                 if perfil_user == "Suspenso":
                                     st.error("Este usuário está suspenso. Procure a Administração.")
                                 else:
-                                    # Validação de Horário de Expediente
+                                    # Validação de Horário de Expediente e Dia da Semana
                                     autorizado, msg_horario = db.validar_horario_acesso(email_login, perfil_user)
                                     if not autorizado:
                                         st.error(f"⛔ Acesso Bloqueado: {msg_horario}")
@@ -325,8 +325,11 @@ for cat_nome, itens in categorias_menu.items():
                 "⚙️ Configurações & Temas"
             ]:
                 menu_plano.append(item)
-        else:  # Perfil Limpeza
+        elif usuario_atual_perfil == "Limpeza":
             if item in ["🧹 Painel de Limpeza", "🔧 Gestão de Manutenção", "📊 Mapa de Ocupação & Leitos", "❓ Central de Ajuda & Manual"]:
+                menu_plano.append(item)
+        elif usuario_atual_perfil == "Manutenção":
+            if item in ["🔧 Gestão de Manutenção", "❓ Central de Ajuda & Manual"]:
                 menu_plano.append(item)
 
 if "redirecionar_menu" in st.session_state:
@@ -357,7 +360,6 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 
-# Na barra lateral, substitua o bloco do botão "Sair do Sistema":
 if st.sidebar.button("🚪 Sair do Sistema (Logout)", use_container_width=True):
     if st.session_state.get("usuario_email"):
         db.revogar_token_sessao(st.session_state["usuario_email"])
@@ -380,7 +382,9 @@ with st.sidebar.expander("🔎 Busca Rápida no Sistema"):
         resultados_busca = db.busca_rapida_global(busca_query)
         achou_algo = False
 
-        if resultados_busca["reservas"]:
+        # Só mostra resultados se o usuário não for da limpeza ou manutenção 
+        # (ou você pode permitir, mas aqui deixamos liberado e tratamos o clique depois)
+        if resultados_busca["reservas"] and usuario_atual_perfil in ["Administrador", "Recepção"]:
             achou_algo = True
             st.markdown("##### 📅 Reservas Ativas:")
             for rb in resultados_busca["reservas"]:
@@ -391,7 +395,7 @@ with st.sidebar.expander("🔎 Busca Rápida no Sistema"):
                     st.session_state["destaque_reserva_id"] = rb["id"]
                     st.rerun()
 
-        if resultados_busca["hospedes"]:
+        if resultados_busca["hospedes"] and usuario_atual_perfil in ["Administrador", "Recepção"]:
             achou_algo = True
             st.markdown("##### 👤 Hóspedes:")
             for hb in resultados_busca["hospedes"]:
@@ -403,14 +407,14 @@ with st.sidebar.expander("🔎 Busca Rápida no Sistema"):
                     if tel_limpo:
                         st.link_button("📲 WPP", f"https://wa.me/55{tel_limpo}")
 
-        if resultados_busca["manutencoes"]:
+        if resultados_busca["manutencoes"] and usuario_atual_perfil in ["Administrador", "Recepção", "Manutenção", "Limpeza"]:
             achou_algo = True
             st.markdown("##### 🔧 Manutenções:")
             for mb in resultados_busca["manutencoes"]:
                 st.write(f"• **{mb['titulo']}** ({mb.get('status')})")
 
         if not achou_algo:
-            st.caption("Nenhum resultado encontrado.")
+            st.caption("Nenhum resultado encontrado para seu perfil.")
 
 st.sidebar.markdown("---")
 
@@ -429,37 +433,47 @@ tot_manut = len(dados_alertas.get("manutencoes_urgentes", []))
 
 with st.sidebar.container():
     st.markdown("### 🔔 Avisos Operacionais")
-    if tot_overstay > 0:
-        st.markdown(f"<div class='alerta-badge-card' style='background-color:#ffe3e3; color:#c92a2a; border-left:4px solid #f03e3e;'>🚨 <b>{tot_overstay}</b> estadia(s) vencida(s)!</div>", unsafe_allow_html=True)
-        if st.button("👉 Resolver Overstay", key="btn_nav_overstay", use_container_width=True):
-            st.session_state["redirecionar_menu"] = "🔔 Central de Alertas"
-            st.rerun()
+    alertas_exibidos = 0
 
-    if tot_checkout > 0:
-        st.markdown(f"<div class='alerta-badge-card' style='background-color:#fff4e6; color:#d9480f; border-left:4px solid #fd7e14;'>⏰ <b>{tot_checkout}</b> saída(s) hoje (11h)</div>", unsafe_allow_html=True)
-        if st.button("👉 Ir p/ Check-outs", key="btn_nav_checkout", use_container_width=True):
-            st.session_state["redirecionar_menu"] = "📋 Check-out & Histórico"
-            st.rerun()
+    if usuario_atual_perfil in ["Administrador", "Recepção"]:
+        if tot_overstay > 0:
+            st.markdown(f"<div class='alerta-badge-card' style='background-color:#ffe3e3; color:#c92a2a; border-left:4px solid #f03e3e;'>🚨 <b>{tot_overstay}</b> estadia(s) vencida(s)!</div>", unsafe_allow_html=True)
+            alertas_exibidos += 1
+            if st.button("👉 Resolver Overstay", key="btn_nav_overstay", use_container_width=True):
+                st.session_state["redirecionar_menu"] = "🔔 Central de Alertas"
+                st.rerun()
 
-    if tot_devedores > 0 and usuario_atual_perfil in ["Administrador", "Recepção"]:
-        st.markdown(f"<div class='alerta-badge-card' style='background-color:#fff9db; color:#e67700; border-left:4px solid #fcc419;'>💸 <b>{tot_devedores}</b> conta(s) pendente(s)</div>", unsafe_allow_html=True)
-        if st.button("👉 Cobrar Inadimplentes", key="btn_nav_devedores", use_container_width=True):
-            st.session_state["redirecionar_menu"] = "🔔 Central de Alertas"
-            st.rerun()
+        if tot_checkout > 0:
+            st.markdown(f"<div class='alerta-badge-card' style='background-color:#fff4e6; color:#d9480f; border-left:4px solid #fd7e14;'>⏰ <b>{tot_checkout}</b> saída(s) hoje (11h)</div>", unsafe_allow_html=True)
+            alertas_exibidos += 1
+            if st.button("👉 Ir p/ Check-outs", key="btn_nav_checkout", use_container_width=True):
+                st.session_state["redirecionar_menu"] = "📋 Check-out & Histórico"
+                st.rerun()
 
-    if tot_limpeza > 0:
-        st.markdown(f"<div class='alerta-badge-card' style='background-color:#f1f3f5; color:#495057; border-left:4px solid #adb5bd;'>🧹 <b>{tot_limpeza}</b> leito(s) para limpeza</div>", unsafe_allow_html=True)
-        if st.button("👉 Ir p/ Limpeza", key="btn_nav_limpeza", use_container_width=True):
-            st.session_state["redirecionar_menu"] = "🧹 Painel de Limpeza"
-            st.rerun()
+        if tot_devedores > 0:
+            st.markdown(f"<div class='alerta-badge-card' style='background-color:#fff9db; color:#e67700; border-left:4px solid #fcc419;'>💸 <b>{tot_devedores}</b> conta(s) pendente(s)</div>", unsafe_allow_html=True)
+            alertas_exibidos += 1
+            if st.button("👉 Cobrar Inadimplentes", key="btn_nav_devedores", use_container_width=True):
+                st.session_state["redirecionar_menu"] = "🔔 Central de Alertas"
+                st.rerun()
 
-    if tot_manut > 0:
-        st.markdown(f"<div class='alerta-badge-card' style='background-color:#fef2f2; color:#991b1b; border-left:4px solid #ef4444;'>🔧 <b>{tot_manut}</b> manutenção(ões) urgente(s)!</div>", unsafe_allow_html=True)
-        if st.button("👉 Resolver Manutenções", key="btn_nav_manut", use_container_width=True):
-            st.session_state["redirecionar_menu"] = "🔧 Gestão de Manutenção"
-            st.rerun()
+    if usuario_atual_perfil in ["Administrador", "Recepção", "Limpeza"]:
+        if tot_limpeza > 0:
+            st.markdown(f"<div class='alerta-badge-card' style='background-color:#f1f3f5; color:#495057; border-left:4px solid #adb5bd;'>🧹 <b>{tot_limpeza}</b> leito(s) para limpeza</div>", unsafe_allow_html=True)
+            alertas_exibidos += 1
+            if st.button("👉 Ir p/ Limpeza", key="btn_nav_limpeza", use_container_width=True):
+                st.session_state["redirecionar_menu"] = "🧹 Painel de Limpeza"
+                st.rerun()
 
-    if tot_overstay == 0 and tot_checkout == 0 and tot_devedores == 0 and tot_limpeza == 0 and tot_manut == 0:
+    if usuario_atual_perfil in ["Administrador", "Recepção", "Limpeza", "Manutenção"]:
+        if tot_manut > 0:
+            st.markdown(f"<div class='alerta-badge-card' style='background-color:#fef2f2; color:#991b1b; border-left:4px solid #ef4444;'>🔧 <b>{tot_manut}</b> manutenção(ões) urgente(s)!</div>", unsafe_allow_html=True)
+            alertas_exibidos += 1
+            if st.button("👉 Resolver Manutenções", key="btn_nav_manut", use_container_width=True):
+                st.session_state["redirecionar_menu"] = "🔧 Gestão de Manutenção"
+                st.rerun()
+
+    if alertas_exibidos == 0:
         st.markdown("<div class='alerta-badge-card' style='background-color:#ebfbee; color:#2b8a3e; border-left:4px solid #40c057;'>✅ Nenhuma pendência no momento</div>", unsafe_allow_html=True)
 
 indice_atual = menu_plano.index(escolha)

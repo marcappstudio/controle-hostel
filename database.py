@@ -6,7 +6,6 @@ from datetime import datetime
 import pytz
 import streamlit as st
 from dotenv import load_dotenv
-from supabase import create_client, Client
 from utils.formatadores import extrair_data
 
 load_dotenv()
@@ -22,10 +21,11 @@ def init_supabase():
     if not SUPABASE_URL or not SUPABASE_KEY:
         st.error("Credenciais de conexão com o Supabase não foram encontradas no arquivo .env ou nos Secrets.")
         st.stop()
+    from supabase import create_client, Client
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 try:
-    supabase: Client = init_supabase()
+    supabase = init_supabase()
 except Exception as e:
     st.error(f"Erro ao conectar com o Supabase: {e}")
     st.stop()
@@ -269,7 +269,7 @@ def obter_resumo_alertas():
 
 
 # ==========================================
-# 6. AUTENTICAÇÃO, PERFIS E SESSÃO (RESTAURADO)
+# 6. AUTENTICAÇÃO, PERFIS E SESSÃO
 # ==========================================
 def solicitar_recuperacao_senha(email: str):
     try:
@@ -302,16 +302,8 @@ def salvar_perfil_usuario(email: str, nome: str, perfil: str, ativo: bool = True
             return False
 
 def obter_perfil_usuario(email: str, auth_user=None):
-    """
-    Verifica na ordem:
-    1. Tabela usuarios_sistema
-    2. Tabela configuracoes (usr_perfil_)
-    3. Tabela colaboradores (se tiver perfil/cargo específico restrito)
-    4. Padrão seguro: Administrador (evita rebaixar o dono do sistema)
-    """
     email = email.lower().strip()
     
-    # 1. Busca em usuarios_sistema
     try:
         res = supabase.table("usuarios_sistema").select("*").eq("email", email).execute()
         if res.data and len(res.data) > 0:
@@ -322,7 +314,6 @@ def obter_perfil_usuario(email: str, auth_user=None):
     except Exception:
         pass
     
-    # 2. Busca em configuracoes
     try:
         chave_usuario = f"usr_perfil_{email}"
         res_c = supabase.table("configuracoes").select("valor").eq("chave", chave_usuario).execute()
@@ -334,7 +325,6 @@ def obter_perfil_usuario(email: str, auth_user=None):
     except Exception:
         pass
 
-    # 3. Busca em colaboradores (apenas se cadastrado lá com restrição)
     try:
         res_col = supabase.table("colaboradores").select("*").eq("email", email).execute()
         if res_col.data and len(res_col.data) > 0:
@@ -348,7 +338,6 @@ def obter_perfil_usuario(email: str, auth_user=None):
     except Exception:
         pass
 
-    # Padrão original: Administrador
     return "Administrador", email
 
 def listar_todos_usuarios():
@@ -376,7 +365,6 @@ def listar_todos_usuarios():
     return lista
 
 def excluir_usuario_sistema(email: str):
-    """Exclui o usuário de usuarios_sistema, configuracoes e colaboradores."""
     email = email.lower().strip()
     sucesso = False
     try:
@@ -406,11 +394,12 @@ def obter_horario_brasilia():
     return datetime.now(fuso)
 
 def validar_horario_acesso(email_usuario, perfil_usuario):
+    # Administradores e Gerentes não têm restrição de horário nem de dia
     if perfil_usuario in ["Administrador", "Gerente"]:
         return True, ""
 
     try:
-        res = supabase.table("colaboradores").select("horario_inicio, horario_fim, restringir_horario").eq("email", email_usuario).execute()
+        res = supabase.table("colaboradores").select("horario_inicio, horario_fim, restringir_horario, dias_permitidos").eq("email", email_usuario).execute()
         if not res.data:
             return True, ""
 
@@ -418,16 +407,39 @@ def validar_horario_acesso(email_usuario, perfil_usuario):
         if not dados.get("restringir_horario"):
             return True, ""
 
+        # Obter data/hora atual no fuso correto
+        agora_dt = obter_horario_brasilia()
+        agora = agora_dt.time()
+
+        # 1. Validação dos Dias da Semana
+        dias_semana_pt = {
+            0: "Segunda-feira",
+            1: "Terça-feira",
+            2: "Quarta-feira",
+            3: "Quinta-feira",
+            4: "Sexta-feira",
+            5: "Sábado",
+            6: "Domingo"
+        }
+        hoje_str = dias_semana_pt[agora_dt.weekday()]
+        
+        # Pega a lista do banco. Se por acaso for None, libera como fallback de segurança
+        dias_permitidos = dados.get("dias_permitidos")
+        
+        if dias_permitidos and hoje_str not in dias_permitidos:
+            return False, f"Acesso negado: Seu expediente não inclui {hoje_str}."
+
+        # 2. Validação de Horário (Hora início e Hora fim)
         h_inicio_str = dados.get("horario_inicio") or "00:00:00"
         h_fim_str = dados.get("horario_fim") or "23:59:59"
 
-        agora = obter_horario_brasilia().time()
         h_inicio = datetime.strptime(str(h_inicio_str)[:8], "%H:%M:%S").time()
         h_fim = datetime.strptime(str(h_fim_str)[:8], "%H:%M:%S").time()
 
         if h_inicio <= h_fim:
             permitido = h_inicio <= agora <= h_fim
         else:
+            # Turno da madrugada (ex: 22:00 as 06:00)
             permitido = agora >= h_inicio or agora <= h_fim
 
         if not permitido:
@@ -441,7 +453,6 @@ def gerar_token_sessao(email_usuario):
     token = secrets.token_urlsafe(32)
     email = email_usuario.lower().strip()
     try:
-        # Salva o token em configuracoes para funcionar tanto para Admin quanto Colaboradores
         chave_tok = f"sess_tok_{token}"
         dados_tok = json.dumps({"email": email, "criado_em": str(datetime.now())})
         supabase.table("configuracoes").insert({"chave": chave_tok, "valor": dados_tok}).execute()
@@ -456,7 +467,6 @@ def gerar_token_sessao(email_usuario):
 def validar_token_sessao(token):
     if not token:
         return None
-    # 1. Verifica na tabela configuracoes (suporta Administradores e qualquer usuário)
     try:
         chave_tok = f"sess_tok_{token}"
         res_c = supabase.table("configuracoes").select("valor").eq("chave", chave_tok).execute()
@@ -470,7 +480,6 @@ def validar_token_sessao(token):
     except Exception:
         pass
 
-    # 2. Fallback na tabela colaboradores
     try:
         res = supabase.table("colaboradores").select("email, nome, cargo, status").eq("session_token", token).execute()
         if res.data and len(res.data) > 0:

@@ -15,6 +15,8 @@ UFS_BRASIL = [
     "RS", "RO", "RR", "SC", "SP", "SE", "TO", "Exterior"
 ]
 
+DIAS_SEMANA_TODOS = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+
 def calcular_idade(data_nasc):
     if not data_nasc:
         return None
@@ -610,13 +612,21 @@ def renderizar_colaboradores():
             c_nac = st.selectbox("Nacionalidade", ["Brasileira", "Estrangeira"])
             c_cpf = st.text_input("CPF") if c_nac == "Brasileira" else ""
             c_pass = st.text_input("Passaporte / RNE") if c_nac != "Brasileira" else ""
-            c_cargo = st.selectbox("Função / Cargo", ["Limpeza", "Recepção", "Voluntário", "Gerente", "Manutenção", "Outros"])
+            
+            # Adicionado "Manutenção" e "Voluntário"
+            c_cargo = st.selectbox("Função / Cargo / Vínculo", ["Limpeza", "Recepção", "Voluntário", "Manutenção", "Gerente", "Outros"])
             c_tel = st.text_input("Telefone de Contato")
 
             st.markdown("---")
             st.markdown("##### ⏰ Janela de Acesso Permitido")
-            c_restringir = st.checkbox("Restringir horário de login deste colaborador?", value=False)
+            c_restringir = st.checkbox("Restringir acesso deste colaborador por dias e horários?", value=False)
             
+            c_dias = st.multiselect(
+                "Dias da semana permitidos para login (Obrigatório se a restrição acima for marcada):",
+                DIAS_SEMANA_TODOS,
+                default=DIAS_SEMANA_TODOS
+            )
+
             col_h1, col_h2 = st.columns(2)
             with col_h1:
                 c_h_inicio = st.time_input("Horário de Entrada Permitida", value=time(8, 0), step=1800)
@@ -630,6 +640,8 @@ def renderizar_colaboradores():
                     st.error("O e-mail de acesso ao sistema é obrigatório.")
                 elif c_nac == "Brasileira" and c_cpf and not validar_cpf(c_cpf):
                     st.error("CPF inválido.")
+                elif c_restringir and not c_dias:
+                    st.error("Se o acesso é restrito, você deve selecionar pelo menos um dia da semana permitido.")
                 else:
                     cpf_limpo = re.sub(r'\D', '', c_cpf) if c_cpf else None
                     try:
@@ -643,6 +655,7 @@ def renderizar_colaboradores():
                             "telefone": c_tel,
                             "status": "Ativo",
                             "restringir_horario": c_restringir,
+                            "dias_permitidos": c_dias if c_restringir else DIAS_SEMANA_TODOS,
                             "horario_inicio": c_h_inicio.strftime("%H:%M:%S"),
                             "horario_fim": c_h_fim.strftime("%H:%M:%S")
                         }).execute()
@@ -680,9 +693,10 @@ def renderizar_colaboradores():
                     e_nome = st.text_input("Nome", value=colab.get("nome", ""))
                     e_email = st.text_input("E-mail de Acesso", value=colab.get("email") or "").strip().lower()
                     
-                    cargos_opcoes = ["Limpeza", "Recepção", "Voluntário", "Gerente", "Manutenção", "Outros"]
+                    # Atualizado com "Manutenção" e "Voluntário"
+                    cargos_opcoes = ["Limpeza", "Recepção", "Voluntário", "Manutenção", "Gerente", "Outros"]
                     idx_cargo = cargos_opcoes.index(colab.get("cargo")) if colab.get("cargo") in cargos_opcoes else 0
-                    e_cargo = st.selectbox("Função / Cargo", cargos_opcoes, index=idx_cargo)
+                    e_cargo = st.selectbox("Função / Cargo / Vínculo", cargos_opcoes, index=idx_cargo)
                     
                     e_tel = st.text_input("Telefone / WhatsApp", value=colab.get("telefone") or "")
                     
@@ -692,8 +706,18 @@ def renderizar_colaboradores():
 
                     st.markdown("##### ⏰ Janela de Acesso Permitido")
                     e_restringir = st.checkbox(
-                        "Restringir horário de login deste colaborador?", 
+                        "Restringir acesso deste colaborador por dias e horários?", 
                         value=bool(colab.get("restringir_horario", False))
+                    )
+
+                    dias_salvos = colab.get("dias_permitidos")
+                    if not dias_salvos:
+                        dias_salvos = DIAS_SEMANA_TODOS
+
+                    e_dias = st.multiselect(
+                        "Dias da semana permitidos para login:",
+                        DIAS_SEMANA_TODOS,
+                        default=dias_salvos
                     )
 
                     h_ini_val = time(8, 0)
@@ -721,6 +745,8 @@ def renderizar_colaboradores():
                     if btn_salvar_edicao:
                         if not e_nome or not e_email:
                             st.error("Nome e E-mail são obrigatórios.")
+                        elif e_restringir and not e_dias:
+                            st.error("Se o acesso é restrito, você deve selecionar pelo menos um dia da semana permitido.")
                         else:
                             try:
                                 db.supabase.table("colaboradores").update({
@@ -730,6 +756,7 @@ def renderizar_colaboradores():
                                     "telefone": e_tel,
                                     "status": e_status,
                                     "restringir_horario": e_restringir,
+                                    "dias_permitidos": e_dias if e_restringir else DIAS_SEMANA_TODOS,
                                     "horario_inicio": e_h_inicio.strftime("%H:%M:%S"),
                                     "horario_fim": e_h_fim.strftime("%H:%M:%S")
                                 }).eq("id", colab_id).execute()
