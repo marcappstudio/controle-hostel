@@ -125,53 +125,43 @@ st.markdown(
         <meta name="google" content="notranslate">
     </head>
     <style>
-        /* 1. Esconde Menu, Topo e Rodapé padrão do Streamlit */
-        header, footer, #MainMenu {{
-            display: none !important;
+        /* 1. Esconde Topo, Rodapé e Menu Padrão */
+        [data-testid="stHeader"], [data-testid="stToolbar"], header, footer, #MainMenu {{
             visibility: hidden !important;
+            display: none !important;
         }}
         
-        /* 2. Força-Bruta contra o selo "Hosted with Streamlit" e "Manage app" */
-        [data-testid="stToolbar"],
-        [data-testid="stDecoration"],
-        div[class*="viewerBadge"],
-        div[class*="stDeployButton"],
-        a[href*="streamlit.io/cloud"],
-        a[title*="Hosted with Streamlit"] {{
+        /* 2. FORÇA BRUTA: Esconde propaganda e botão "Manage App" da nuvem */
+        .stDeployButton, 
+        .viewerBadge_container, 
+        .viewerBadge_link, 
+        div[class^="viewerBadge"], 
+        a[href*="streamlit.io"] {{
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
             pointer-events: none !important;
-            z-index: -9999 !important;
         }}
 
-        /* 3. Ajusta o espaço em branco do topo */
+        /* 3. Ajusta o espaço superior vazio */
         .appview-container .main .block-container {{
-            padding-top: 1rem !important;
+            padding-top: 2rem !important;
         }}
 
-        /* Impede tradução automática que quebra layout */
+        /* Impede tradução automática */
         html, body, [class*="css"], [class*="st-"] {{
             translate: no !important;
         }}
         
-        /* Cards e perfis */
+        /* Estilos dos Cards do Hostel */
         .alerta-badge-card {{
-            padding: 8px 12px;
-            border-radius: 6px;
-            margin-bottom: 4px;
-            font-size: 0.88rem;
+            padding: 8px 12px; border-radius: 6px; margin-bottom: 4px; font-size: 0.88rem;
         }}
         .user-profile-badge {{
-            padding: 10px 12px;
-            border-radius: 8px;
-            margin-bottom: 12px;
+            padding: 10px 12px; border-radius: 8px; margin-bottom: 12px;
         }}
         .recibo-card {{
-            padding: 20px;
-            border-radius: 8px;
-            font-family: monospace;
-            line-height: 1.4;
+            padding: 20px; border-radius: 8px; font-family: monospace; line-height: 1.4;
         }}
         {css_tema}
     </style>
