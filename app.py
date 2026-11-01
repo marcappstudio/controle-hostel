@@ -125,19 +125,28 @@ st.markdown(
         <meta name="google" content="notranslate">
     </head>
     <style>
-        /* Esconde o menu do Streamlit, botão de deploy e rodapé */
-        [data-testid="stToolbar"], [data-testid="stDecoration"], footer, #MainMenu {{
+        /* 1. Esconde topo, menu e rodapé padrão do Streamlit */
+        [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], footer, #MainMenu {{
             display: none !important;
             visibility: hidden !important;
         }}
         
+        /* 2. Esconde o selo flutuante "Hosted with Streamlit" / "Manage app" no canto inferior */
+        .viewerBadge_container, .viewerBadge_link, .stDeployButton {{
+            display: none !important;
+            visibility: hidden !important;
+        }}
+        
+        /* 3. Ajusta o espaço em branco (margem) que o cabeçalho invisível deixa no topo */
+        .appview-container .main .block-container {{
+            padding-top: 2rem !important;
+            padding-bottom: 2rem !important;
+        }}
+
         html, body, [class*="css"], [class*="st-"] {{
             translate: no !important;
         }}
-        /* ... restante do seu css ... */
-        html, body, [class*="css"], [class*="st-"] {{
-            translate: no !important;
-        }}
+        
         .alerta-badge-card {{
             padding: 8px 12px;
             border-radius: 6px;
