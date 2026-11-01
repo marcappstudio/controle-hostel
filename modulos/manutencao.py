@@ -61,8 +61,8 @@ def renderizar_manutencao(usuario_perfil):
                 st.caption(f"🔧 Exibindo **{len(lista_exibicao)}** ocorrência(s)")
             with col_exp2:
                 df_exp = pd.DataFrame([{
-                    "Título": item["titulo"], "Tipo": item["tipo"], "Prioridade": item["prioridade"],
-                    "Status": item["status"], "Local": item.get("local_detalhe") or item.get("local_tipo"),
+                    "Título": item["titulo"], "Tipo": item.get("tipo", "Corretiva"), "Prioridade": item["prioridade"],
+                    "Status": item["status"], "Local": item.get("local_detalhe") or item.get("local_tipo", "Geral"),
                     "Data Limite": formatar_data_br(item.get("data_agendada")).split()[0],
                     "Custo Estimado (R$)": f"{float(item.get('custo_estimado') or 0):.2f}",
                     "Custo Real (R$)": f"{float(item.get('custo_real') or 0):.2f}"
